@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { analyzeRosterImage, mergeRosterResults } from '../lib/anthropic.js';
 import { analyzeEntry, getMinRest } from '../lib/ftl-rules.js';
-import { loadRoster, saveRoster, loadCrewProfile, saveCrewProfile } from '../lib/storage.js';
+import { loadRoster, saveRoster, saveCrewProfile } from '../lib/storage.js';
 import CalendarGrid from '../components/CalendarGrid.jsx';
 import DayModal from '../components/DayModal.jsx';
 
@@ -97,13 +97,11 @@ function StatBadge({ label, value, accent = false }) {
 }
 
 // ─── main component ───────────────────────────────────────────────────────────
-export default function ScheduleCalendar() {
-  const now = new Date();
-  const [year,   setYear]   = useState(now.getFullYear());
-  const [month,  setMonth]  = useState(now.getMonth() + 1);
-  const [entries, setEntries] = useState([]);
-  const [totals,  setTotals]  = useState(null);
-  const [crewProfile, setCrewProfile] = useState(() => loadCrewProfile());
+export default function ScheduleCalendar({
+  year, setYear, month, setMonth,
+  entries, setEntries, totals, setTotals,
+  crewProfile, setCrewProfile,
+}) {
   const [selectedDay, setSelectedDay] = useState(null); // { entry, prevEntry, nextEntry }
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);

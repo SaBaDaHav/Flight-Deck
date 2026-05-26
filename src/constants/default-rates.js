@@ -3,8 +3,8 @@ export const DEFAULT_RATES = {
   // Variable (flight-dependent)
   transportPerDay:       840,    // THB/attended duty day — non-taxable
   sectorPerLeg:          840,    // THB/landing — taxable
-  domBlockPerHr:         681,    // THB/hr = 11.34/min — non-taxable
-  interBlockPerHr:       3160,   // THB/hr = 52.67/min — taxable
+  domBlockPerMin:        11.34,  // THB/min — non-taxable (payslip-confirmed)
+  interBlockPerMin:      52.67,  // THB/min — taxable (payslip-confirmed)
   perDiemDom:            500,    // THB/domestic overnight
   perDiemInterUsd:       60,     // USD/international overnight
   usdThb:                35.55,  // editable monthly exchange rate
@@ -20,6 +20,5 @@ export const DEFAULT_RATES = {
   simTrainingDeduction:  20000,  // THB/FFS session — deduction (ค่าฝึกอบรม)
 };
 
-// Derived per-minute rates (computed once to avoid repeated division)
-export const DOM_BLOCK_PER_MIN  = DEFAULT_RATES.domBlockPerHr  / 60; // 11.35
-export const INTER_BLOCK_PER_MIN = DEFAULT_RATES.interBlockPerHr / 60; // 52.67
+export const DOM_BLOCK_PER_MIN   = DEFAULT_RATES.domBlockPerMin;
+export const INTER_BLOCK_PER_MIN = DEFAULT_RATES.interBlockPerMin;

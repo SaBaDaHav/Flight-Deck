@@ -15,12 +15,14 @@ export function calcDayPay(day, rates = DEFAULT_RATES) {
   const {
     transportPerDay,
     sectorPerLeg,
-    domBlockPerHr,
-    interBlockPerHr,
     perDiemDom,
     perDiemInterUsd,
     usdThb,
   } = rates;
+
+  // Use per-minute rates directly; fall back to hourly÷60 for old stored rates
+  const domRate   = rates.domBlockPerMin   ?? (rates.domBlockPerHr   / 60);
+  const interRate = rates.interBlockPerMin ?? (rates.interBlockPerHr / 60);
 
   const domMins    = day.domMins    || 0;
   const interMins  = day.interMins  || 0;
@@ -36,9 +38,9 @@ export function calcDayPay(day, rates = DEFAULT_RATES) {
   // Sector pay
   const sector = legs * sectorPerLeg;
 
-  // Block pay (per minute)
-  const domBlock   = domMins   * (domBlockPerHr   / 60);
-  const interBlock = interMins * (interBlockPerHr / 60);
+  // Block pay (per minute using confirmed rates)
+  const domBlock   = domMins   * domRate;
+  const interBlock = interMins * interRate;
 
   // Per diem
   let perdiem = 0;

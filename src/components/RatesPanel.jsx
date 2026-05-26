@@ -8,8 +8,8 @@ const GROUPS = [
     fields: [
       { key: 'transportPerDay',    label: 'Transport / duty day',   unit: 'THB',      hint: 'Non-taxable' },
       { key: 'sectorPerLeg',       label: 'Sector pay / landing',   unit: 'THB',      hint: 'Taxable' },
-      { key: 'domBlockPerHr',      label: 'DOM block / hr',         unit: 'THB/hr',   hint: '÷60 = 11.34/min · Non-taxable' },
-      { key: 'interBlockPerHr',    label: 'INTER block / hr',       unit: 'THB/hr',   hint: '÷60 = 52.67/min · Taxable' },
+      { key: 'domBlockPerMin',      label: 'DOM block / min',        unit: 'THB/min',  hint: 'Non-taxable (confirmed 11.34)' },
+      { key: 'interBlockPerMin',   label: 'INTER block / min',      unit: 'THB/min',  hint: 'Taxable (confirmed 52.67)' },
       { key: 'perDiemDom',         label: 'Per diem DOM / night',   unit: 'THB',      hint: 'Taxable' },
       { key: 'perDiemInterUsd',    label: 'Per diem INTER / night', unit: 'USD',      hint: 'Taxable · converted at exchange rate' },
       { key: 'usdThb',             label: 'USD / THB rate',         unit: 'THB/USD',  hint: 'Edit monthly' },
