@@ -7,5 +7,5 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  base: process.env.GITHUB_ACTIONS ? '/flight-deck/' : '/',
+  base: '/Flight-Deck/',
 })
