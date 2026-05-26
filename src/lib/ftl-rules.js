@@ -324,15 +324,17 @@ export function analyzeEntry(entry, prevEntry = null) {
     result.fdpPct = result.fdpUsedMin / result.fdpLimitMin;
     if (result.fdpUsedMin > result.fdpLimitMin) {
       result.fdpStatus = 'violation';
+      result.notes.push('FDP exceeds basic limit (OMA Table 7.1.2)');
     } else if (result.fdpPct >= 0.90) {
       result.fdpStatus = 'warning';
+      result.notes.push('FDP ≥90% of table limit (OMA Table 7.1.2)');
     }
   }
 
   // Night duty sector limit (7.1.12): max 4 sectors
   if (result.nightDuty && numLegs > 4) {
     result.fdpStatus = 'violation';
-    result.notes.push('Night duty exceeds 4-sector limit');
+    result.notes.push('Night duty: max 4 sectors exceeded (OMA §7.1.12)');
   }
 
   // Rest before

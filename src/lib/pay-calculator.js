@@ -181,7 +181,9 @@ export function calcDelta(scheduled, actual) {
 }
 
 export function deltaToThb(domDeltaMin, interDeltaMin, rates = DEFAULT_RATES) {
-  const dom   = domDeltaMin   * (rates.domBlockPerHr   / 60);
-  const inter = interDeltaMin * (rates.interBlockPerHr / 60);
+  const domRate   = rates.domBlockPerMin   ?? ((rates.domBlockPerHr   ?? 681)  / 60);
+  const interRate = rates.interBlockPerMin ?? ((rates.interBlockPerHr ?? 3160) / 60);
+  const dom   = (domDeltaMin   || 0) * domRate;
+  const inter = (interDeltaMin || 0) * interRate;
   return { dom, inter, total: dom + inter };
 }

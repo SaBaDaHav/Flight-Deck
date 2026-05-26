@@ -230,10 +230,25 @@ export default function ScheduleCalendar({
     const totalFlightMins = totals ? parseHhmm(totals.flightTime) : flightMins;
     const totalDutyMins   = totals ? parseHhmm(totals.dutyTime)   : dutyMins;
 
+    const violatedEntries = flights
+      .filter(e => e._ftlViolation)
+      .map(e => {
+        const reasons = [];
+        if (e._ftlAnalysis?.fdpStatus === 'violation') {
+          const sectorNote = e._ftlAnalysis?.notes?.find(n => n.includes('sector'));
+          reasons.push(sectorNote ?? 'FDP exceeds basic limit (OMA Table 7.1.2)');
+        }
+        if (e._restViolation) {
+          reasons.push('Minimum rest not met (ORO.FTL.235)');
+        }
+        return { date: e.date, dutyCode: e.dutyCode, from: e.from, to: e.to, reasons };
+      });
+
     return {
       flights: flights.length,
       rerrp2ld, rerrp36, violations, warnings, nightDuties,
       totalFlightMins, totalDutyMins, tafbMins,
+      violatedEntries,
     };
   }, [entries, totals]);
 
@@ -416,6 +431,21 @@ export default function ScheduleCalendar({
                 </div>
               )}
             </div>
+
+            {/* Violations detail */}
+            {stats.violatedEntries?.length > 0 && (
+              <div className="bg-red-900/20 border border-red-700/40 rounded-lg p-3 space-y-1">
+                <p className="text-xs font-bold text-red-400 uppercase tracking-wide mb-2">FTL Violations</p>
+                {stats.violatedEntries.map(v => (
+                  <div key={v.date} className="flex flex-wrap items-baseline gap-x-2 text-xs">
+                    <span className="font-mono text-slate-400">{v.date}</span>
+                    {v.dutyCode && <span className="text-slate-500">({v.dutyCode})</span>}
+                    {v.from && v.to && <span className="text-slate-400">{v.from}→{v.to}</span>}
+                    <span className="text-red-300">— {v.reasons.join(' · ')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Re-upload hint */}
             <p className="text-center text-xs text-slate-600">

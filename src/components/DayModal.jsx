@@ -228,7 +228,7 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
               <div className="space-y-2.5">
                 {ftl.fdpLimitMin !== null && (
                   <FtlBar
-                    label={`FDP used (${numLegs} leg${numLegs !== 1 ? 's' : ''})`}
+                    label={`FDP used — ${numLegs} leg${numLegs !== 1 ? 's' : ''} (OMA Table 7.1.2)`}
                     usedMin={ftl.fdpUsedMin}
                     limitMin={ftl.fdpLimitMin}
                     status={ftl.fdpStatus}
@@ -236,7 +236,7 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
                 )}
                 {restBefore !== null && minRestBefore !== null && (
                   <FtlBar
-                    label="Rest before"
+                    label="Rest before (ORO.FTL.235)"
                     usedMin={restBefore}
                     limitMin={minRestBefore}
                     status={restBeforeStatus}
@@ -252,13 +252,25 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
 
                 {ftl.pswmRequired && (
                   <div className="text-xs bg-amber-900/30 border border-amber-700/50 rounded px-2 py-1.5 text-amber-300">
-                    PSWM form required (night / early / late duty)
+                    PSWM form required — night / early / late duty (OMA §7.1.12)
                   </div>
                 )}
 
                 {ftl.extensionAllowed && ftl.fdpLimitExtMin && (
                   <div className="text-xs text-slate-400">
-                    Extension possible to {fmtMin(ftl.fdpLimitExtMin)} (commander's discretion)
+                    Extension possible to {fmtMin(ftl.fdpLimitExtMin)} — commander's discretion (OMA Table 7.1.3)
+                  </div>
+                )}
+
+                {ftl.fdpStatus === 'violation' && ftl.notes?.filter(n => n.includes('exceeds') || n.includes('sector')).map((note, i) => (
+                  <div key={i} className="text-xs bg-red-900/30 border border-red-700/50 rounded px-2 py-1.5 text-red-300">
+                    ⛔ {note}
+                  </div>
+                ))}
+
+                {entry._restViolation && (
+                  <div className="text-xs bg-red-900/30 border border-red-700/50 rounded px-2 py-1.5 text-red-300">
+                    ⛔ Minimum rest not met (ORO.FTL.235)
                   </div>
                 )}
               </div>

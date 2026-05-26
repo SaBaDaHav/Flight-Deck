@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { classifyRoute } from '../lib/route-parser.js';
+import { classifyRoute, splitBlockByType } from '../lib/route-parser.js';
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
 import { loadAllowance, saveAllowance, loadRates, saveRates } from '../lib/storage.js';
 import { DEFAULT_RATES } from '../constants/default-rates.js';
+import { isDomestic } from '../constants/thai-airports.js';
 import PayBreakdown from '../components/PayBreakdown.jsx';
 import RatesPanel from '../components/RatesPanel.jsx';
 
@@ -63,6 +64,32 @@ function rowDiscrepancy(row) {
   const totalAbsDelta = Math.abs(domDelta) + Math.abs(interDelta);
   if (totalAbsDelta === 0) return null;
   return totalAbsDelta <= 15 ? 'minor' : 'major';
+}
+
+// ─── calendar sync helpers ───────────────────────────────────────────────────
+
+function parseHhmmToMin(str) {
+  if (!str) return 0;
+  const [h, m] = str.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function buildRouteFromCalEntry(entry) {
+  if (entry.sectors && entry.sectors.length > 0) {
+    const airports = [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)];
+    return airports.join('-');
+  }
+  if (entry.from && entry.to) return `${entry.from}-${entry.to}`;
+  return '';
+}
+
+function getPerDiemFromCalEntry(entry) {
+  if (!entry.layover) return '';
+  const lastDest = entry.sectors?.length > 0
+    ? entry.sectors[entry.sectors.length - 1].dest
+    : entry.to;
+  if (!lastDest) return '';
+  return isDomestic(lastDest) ? 'DOM' : 'INTER';
 }
 
 const MONTH_NAMES = [
@@ -147,7 +174,7 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
             if (flags.isSim && row.simCount === '0') onUpdate(row.date, 'simCount', '1');
             if (!flags.isSim && row.simCount === '1') onUpdate(row.date, 'simCount', '0');
           }}
-          placeholder="BKK-ICN"
+          placeholder=""
           className="text-white placeholder-slate-600"
         />
       </td>
@@ -266,7 +293,7 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
 
 // ─── main component ───────────────────────────────────────────────────────────
 
-export default function AllowanceChecker() {
+export default function AllowanceChecker({ calEntries = [], calYear, calMonth }) {
   const now = new Date();
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -310,6 +337,32 @@ export default function AllowanceChecker() {
     saveAllowance(year, month, { rows });
     setIsDirty(false);
   };
+
+  const syncFromCalendar = useCallback(() => {
+    const flightEntries = calEntries.filter(e => e.type === 'FLIGHT');
+    setRows(prev => prev.map(row => {
+      const dayStr  = String(row.date).padStart(2, '0');
+      const monthStr = String(calMonth).padStart(2, '0');
+      const fullDate = `${calYear}-${monthStr}-${dayStr}`;
+      const entry = flightEntries.find(e => e.date === fullDate);
+      if (!entry) return row;
+
+      const route      = buildRouteFromCalEntry(entry);
+      const totalMins  = parseHhmmToMin(entry.flightTime);
+      const { domMins, interMins } = splitBlockByType(route, totalMins);
+      const perDiem    = getPerDiemFromCalEntry(entry);
+
+      return {
+        ...row,
+        route:          route || row.route,
+        domScheduled:   domMins   > 0 ? String(domMins)   : row.domScheduled,
+        interScheduled: interMins > 0 ? String(interMins) : row.interScheduled,
+        legs:           entry.numLegs != null ? String(entry.numLegs) : row.legs,
+        perDiem:        perDiem !== '' ? perDiem : row.perDiem,
+      };
+    }));
+    setIsDirty(true);
+  }, [calEntries, calYear, calMonth]);
 
   // ─── derived totals ───────────────────────────────────────────────────────
 
@@ -421,6 +474,17 @@ export default function AllowanceChecker() {
           >
             {isDirty ? 'Save' : 'Saved'}
           </button>
+
+          {/* Sync from calendar */}
+          {calEntries.filter(e => e.type === 'FLIGHT').length > 0 && calYear === year && calMonth === month && (
+            <button
+              onClick={syncFromCalendar}
+              className="text-sm px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
+              title="Populate HR-scheduled columns from the loaded Merlot roster"
+            >
+              Sync from Calendar
+            </button>
+          )}
 
           {/* Toggle rates */}
           <button

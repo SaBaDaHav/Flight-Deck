@@ -57,7 +57,13 @@ export default function App() {
           />
         )}
         {tab === 'roster'    && <RosterAnalyser   />}
-        {tab === 'allowance' && <AllowanceChecker />}
+        {tab === 'allowance' && (
+          <AllowanceChecker
+            calEntries={calEntries}
+            calYear={calYear}
+            calMonth={calMonth}
+          />
+        )}
       </main>
     </div>
   );
