@@ -104,9 +104,12 @@ export function mergeRosterResults(results) {
 // Analyze a Merlot mobile app "Duties List" screenshot.
 // Returns a raw array of { dutyCode, route, date, dow, report, release,
 //   releaseNextDay, releaseDate } objects — caller does type/block post-processing.
-export async function analyzeMobileRoster(imageBase64) {
+// selectedYear: the calendar year currently selected in the UI (e.g. 2026).
+export async function analyzeMobileRoster(imageBase64, selectedYear) {
   const base64Data = imageBase64.split(',')[1];
   const mediaType  = imageBase64.split(';')[0].split(':')[1];
+  const year = selectedYear || new Date().getFullYear();
+  const prompt = MOBILE_ROSTER_PROMPT.replace(/\{\{YEAR\}\}/g, year);
 
   const body = {
     model: MODEL,
@@ -116,7 +119,7 @@ export async function analyzeMobileRoster(imageBase64) {
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
-          { type: 'text',  text: MOBILE_ROSTER_PROMPT },
+          { type: 'text',  text: prompt },
         ],
       },
     ],
@@ -157,7 +160,7 @@ RULES:
 - route: everything after the colon on line 1 (e.g. "BKK-ICN", "BKK-SGN-BKK")
   If the route has no dashes (e.g. "BKKICN"), split into 3-letter codes: "BKK-ICN"
   If route is "BKKBKK" use "BKK-BKK"
-- date: the date from line 2 start, as YYYY-MM-DD (assume current year if not shown)
+- date: the date from line 2 start, as {{YEAR}}-MM-DD. The year is {{YEAR}} — use {{YEAR}} for ALL dates unless the month clearly wraps to next year (e.g. a Dec 31 entry releasing Jan 01 means that Jan 01 is {{YEAR}}+1)
 - dow: 3-letter day abbreviation (Mon/Tue/Wed/Thu/Fri/Sat/Sun) from the (XX) abbreviation
 - report: HH:MM — the first time on line 2 (strip the L suffix)
 - release: HH:MM — the last time on line 2 (strip the L suffix)
@@ -165,7 +168,7 @@ RULES:
 - releaseDate: the release date as YYYY-MM-DD if different from date; otherwise omit
 
 Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
-Schema: [{"dutyCode":"ICN2-1","route":"BKK-ICN","date":"2026-06-01","dow":"Mon","report":"00:55","release":"10:30","releaseNextDay":false}]`;
+Schema: [{"dutyCode":"ICN2-1","route":"BKK-ICN","date":"{{YEAR}}-06-01","dow":"Mon","report":"00:55","release":"10:30","releaseNextDay":false}]`;
 
 // ─── HR allowance sheet extraction ───────────────────────────────────────────
 

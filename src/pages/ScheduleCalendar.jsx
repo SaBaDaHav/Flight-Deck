@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { analyzeRosterImage, mergeRosterResults, analyzeMobileRoster } from '../lib/anthropic.js';
 import { analyzeEntry, getMinRest } from '../lib/ftl-rules.js';
-import { loadRoster, saveRoster, saveCrewProfile } from '../lib/storage.js';
+import { loadRoster, saveRoster, saveCrewProfile, loadCrewProfile } from '../lib/storage.js';
 import { classifyRoute } from '../lib/route-parser.js';
 import { getUnknownAirports, learnAirport } from '../lib/airport-db.js';
 import CalendarGrid from '../components/CalendarGrid.jsx';
@@ -103,8 +103,18 @@ function routeToSectors(route) {
 }
 
 // Convert AI mobile entries into the same schema used by desktop roster entries.
-function postProcessMobileEntries(rawEntries) {
+// selectedYear: force all parsed dates to this year (fixes AI defaulting to wrong year).
+function postProcessMobileEntries(rawEntries, selectedYear) {
   return rawEntries.map(e => {
+    // Correct year if AI returned wrong year (e.g. 2025 instead of 2026)
+    let date = e.date;
+    if (date && selectedYear) {
+      const parsedYear = parseInt(date.slice(0, 4), 10);
+      if (!isNaN(parsedYear) && parsedYear !== selectedYear) {
+        date = `${selectedYear}${date.slice(4)}`;
+      }
+    }
+
     const type  = mobileEntryType(e.dutyCode);
     const route = (e.route || '').trim();
     const parts = route.split('-').filter(Boolean);
@@ -127,7 +137,7 @@ function postProcessMobileEntries(rawEntries) {
     }
 
     return {
-      date:           e.date,
+      date:           date,
       dow:            DOW_MAP[e.dow] || e.dow,
       type,
       dutyCode:       e.dutyCode || null,
@@ -311,20 +321,23 @@ export default function ScheduleCalendar({
     }
   }, [year, month]);
 
-  // ─── mobile list view processor ───────────────────────────────────────────
+  // ─── mobile list view processor (supports multiple screenshots) ───────────
 
-  const processMobileFile = useCallback(async (file) => {
-    if (!file) return;
+  const processMobileFiles = useCallback(async (files) => {
+    if (!files || files.length === 0) return;
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
     setIsLoading(true);
     setLoadError(null);
     setSavedInfo(null);
     try {
-      const base64  = await fileToBase64(file);
-      const raw     = await analyzeMobileRoster(base64);
-      if (!raw || raw.length === 0) throw new Error('No entries found in mobile roster image.');
-      const entries = postProcessMobileEntries(raw);
+      const base64s   = await Promise.all(imageFiles.map(fileToBase64));
+      const rawArrays = await Promise.all(base64s.map(b64 => analyzeMobileRoster(b64, year)));
+      const allRaw    = rawArrays.flat();
+      if (!allRaw || allRaw.length === 0) throw new Error('No entries found in mobile roster image.');
+      const entries   = postProcessMobileEntries(allRaw, year);
 
-      const dominant = dominantMonth(entries);
+      const dominant    = dominantMonth(entries);
       const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
       const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
 
@@ -354,13 +367,20 @@ export default function ScheduleCalendar({
   }, []);
 
   const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    // Reject placeholder crew names (e.g. AI returning literal "string" from schema).
+    // Fall back to the saved crew profile; if none exists, leave crew null.
+    let finalCrew = crew;
+    if (!finalCrew || !finalCrew.name || finalCrew.name === 'string') {
+      finalCrew = loadCrewProfile() || null;
+    }
+
     const enriched = enrichEntries(rawEntries);
     setYear(targetYear);
     setMonth(targetMonth);
     setEntries(enriched);
     setTotals(totals || null);
-    if (crew) { setCrewProfile(crew); saveCrewProfile(crew); }
-    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew });
+    if (finalCrew) { setCrewProfile(finalCrew); saveCrewProfile(finalCrew); }
+    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew: finalCrew });
     setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
     setPendingSave(null);
     setUnknownCodes([]);
@@ -500,7 +520,7 @@ export default function ScheduleCalendar({
             {isLoading ? 'Analyzing…' : 'Mobile List'}
           </button>
           <input ref={fileInputRef}   type="file" accept="image/*" multiple className="hidden" onChange={e => processFiles(e.target.files)} />
-          <input ref={mobileInputRef} type="file" accept="image/*"          className="hidden" onChange={e => { if (e.target.files?.[0]) processMobileFile(e.target.files[0]); }} />
+          <input ref={mobileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => processMobileFiles(e.target.files)} />
         </div>
       </div>
 
