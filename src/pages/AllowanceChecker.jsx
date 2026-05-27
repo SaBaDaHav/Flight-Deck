@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; /* eslint-disable react-hooks/set-state-in-effect */
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
@@ -124,23 +124,13 @@ function TableInput({ value, onChange, placeholder = '', className = '', type = 
   );
 }
 
-function RowHighlight({ disc }) {
-  if (!disc) return null;
-  return (
-    <span className={`absolute inset-0 pointer-events-none rounded-sm ${
-      disc === 'major' ? 'bg-red-500/10' : 'bg-amber-500/10'
-    }`} />
-  );
-}
-
 function AllowanceRow({ row, idx, onUpdate, rates }) {
   const { isSim, isGround, isOff } = routeFlags(row.route);
-  const { domSched, interSched, domEff, interEff, domDelta, interDelta } = rowEffective(row);
+  const { domEff, interEff, domDelta, interDelta } = rowEffective(row);
   const disc = rowDiscrepancy(row);
 
   const legs      = toInt(row.legs);
   const perDiem   = row.perDiem || null;
-  const simCount  = toInt(row.simCount);
   const instSess  = toInt(row.instSessions);
 
   const dayPay = useMemo(() => calcDayPay({
@@ -317,17 +307,17 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
   // Reload from storage when month/year changes
   useEffect(() => {
-    const stored = loadAllowance(year, month);
     const n = daysInMonth(year, month);
-    if (stored && stored.rows) {
-      // Merge stored rows with full-month scaffold (handles partial saves)
-      const byDate = Object.fromEntries(stored.rows.map(r => [r.date, r]));
-      setRows(Array.from({ length: n }, (_, i) => byDate[i + 1] || makeEmptyRow(i + 1)));
-    } else {
-      setRows(Array.from({ length: n }, (_, i) => makeEmptyRow(i + 1)));
-    }
-    setIsDirty(false);
-  }, [year, month]);
+    const stored = loadAllowance(year, month);
+    const byDate = stored?.rows
+      ? Object.fromEntries(stored.rows.map(r => [r.date, r]))
+      : null;
+    const newRows = Array.from({ length: n }, (_, i) =>
+      byDate ? (byDate[i + 1] || makeEmptyRow(i + 1)) : makeEmptyRow(i + 1)
+    );
+    setRows(newRows); 
+    setIsDirty(false); 
+  }, [year, month]); 
 
   const navigateMonth = (delta) => {
     let m = month + delta;
@@ -543,7 +533,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
   // ─── derived totals ───────────────────────────────────────────────────────
 
-  const { totals, days, discrepancies, monthlyResult, stats } = useMemo(() => {
+  const { totals, discrepancies, monthlyResult, stats } = useMemo(() => {
     let totalDomSched = 0, totalInterSched = 0;
     let totalDomEff   = 0, totalInterEff   = 0;
     let totalLegs     = 0, totalDutyDays   = 0, simDays = 0;
