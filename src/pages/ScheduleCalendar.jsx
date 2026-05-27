@@ -25,6 +25,38 @@ function fmtMin(mins) {
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 
+// Parse a period date string in multiple formats (ISO, "DD/Mon/YYYY", "DD Mon YYYY")
+function parsePeriodDate(str) {
+  if (!str) return null;
+  const t = str.trim();
+  // ISO 8601: "2026-03-24" — always try first
+  let d = new Date(t);
+  if (!isNaN(d.getTime())) return d;
+  // Merlot native: "24/Mar/2026" or "24 Mar 2026" or "24-Mar-2026"
+  const m = t.match(/^(\d{1,2})[\/\s-]([A-Za-z]{3})[\/\s-](\d{4})$/);
+  if (m) {
+    d = new Date(`${m[2]} ${m[1]}, ${m[3]}`);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+// Find the calendar month that contains the most entries — most reliable way
+// to determine which month a Merlot roster belongs to, regardless of period dates.
+function dominantMonth(entries) {
+  const counts = {};
+  for (const e of entries) {
+    if (!e.date || typeof e.date !== 'string' || e.date.length < 7) continue;
+    const ym = e.date.slice(0, 7); // "YYYY-MM"
+    counts[ym] = (counts[ym] || 0) + 1;
+  }
+  let best = null, bestCount = 0;
+  for (const [ym, n] of Object.entries(counts)) {
+    if (n > bestCount) { bestCount = n; best = ym; }
+  }
+  return best; // "YYYY-MM" or null
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -103,9 +135,10 @@ export default function ScheduleCalendar({
   crewProfile, setCrewProfile,
 }) {
   const [selectedDay, setSelectedDay] = useState(null); // { entry, prevEntry, nextEntry }
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isLoading,   setIsLoading]   = useState(false);
+  const [loadError,   setLoadError]   = useState(null);
+  const [isDragging,  setIsDragging]  = useState(false);
+  const [savedInfo,   setSavedInfo]   = useState(null); // { count, year, month } after successful parse
   const fileInputRef = useRef(null);
 
   // Load stored roster when month/year changes
@@ -142,6 +175,7 @@ export default function ScheduleCalendar({
 
     setIsLoading(true);
     setLoadError(null);
+    setSavedInfo(null);
 
     try {
       const base64s  = await Promise.all(imageFiles.map(fileToBase64));
@@ -152,29 +186,45 @@ export default function ScheduleCalendar({
 
       const enriched = enrichEntries(merged.entries);
 
-      // Auto-set month/year from parsed period
-      if (merged.crew?.period) {
-        const d = new Date(merged.crew.period.split(' to ')[0]);
-        if (!isNaN(d)) {
-          setYear(d.getFullYear());
-          setMonth(d.getMonth() + 1);
+      // Determine target year/month.
+      // Strategy 1 (most reliable): find the month containing the most entries.
+      // Strategy 2 (fallback): parse the period END date (end is closer to the
+      //   work month — e.g. "25 Feb – 24 Mar" → March, not February).
+      let targetYear  = year;
+      let targetMonth = month;
+
+      const dominant = dominantMonth(merged.entries);
+      if (dominant) {
+        targetYear  = parseInt(dominant.slice(0, 4), 10);
+        targetMonth = parseInt(dominant.slice(5, 7), 10);
+      } else if (merged.crew?.period) {
+        const parts = merged.crew.period.split(' to ');
+        const d = parsePeriodDate((parts[1] || '').trim()) ||
+                  parsePeriodDate((parts[0] || '').trim());
+        if (d) {
+          targetYear  = d.getFullYear();
+          targetMonth = d.getMonth() + 1;
         }
       }
 
+      setYear(targetYear);
+      setMonth(targetMonth);
       setEntries(enriched);
       setTotals(merged.totals || null);
 
-      // Save crew profile
       if (merged.crew) {
         setCrewProfile(merged.crew);
         saveCrewProfile(merged.crew);
       }
 
-      // Save to storage (raw entries without computed _ftl fields)
+      // Save raw entries (no _ftl* computed fields) under the correct month key
       const rawEntries = merged.entries;
-      const saveYear   = merged.crew?.period ? new Date(merged.crew.period.split(' to ')[0]).getFullYear() : year;
-      const saveMonth  = merged.crew?.period ? new Date(merged.crew.period.split(' to ')[0]).getMonth() + 1 : month;
-      saveRoster(saveYear, saveMonth, { entries: rawEntries, totals: merged.totals, crew: merged.crew });
+      saveRoster(targetYear, targetMonth, {
+        entries: rawEntries,
+        totals:  merged.totals,
+        crew:    merged.crew,
+      });
+      setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
 
     } catch (err) {
       setLoadError(err.message || 'Failed to analyze roster image.');
@@ -447,10 +497,16 @@ export default function ScheduleCalendar({
               </div>
             )}
 
-            {/* Re-upload hint */}
-            <p className="text-center text-xs text-slate-600">
-              Drop a new Merlot image anywhere to update · multiple images merge automatically
-            </p>
+            {/* Saved info / debug indicator */}
+            {savedInfo && savedInfo.year === year && savedInfo.month === month ? (
+              <p className="text-center text-xs text-emerald-500">
+                {savedInfo.count} entries saved · storage key: roster:{savedInfo.year}-{String(savedInfo.month).padStart(2, '0')}
+              </p>
+            ) : (
+              <p className="text-center text-xs text-slate-600">
+                Drop a new Merlot image anywhere to update · multiple images merge automatically
+              </p>
+            )}
           </>
         )}
       </div>

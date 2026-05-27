@@ -343,22 +343,37 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
   const syncFromCalendar = useCallback(() => {
     // Read from storage first; fall back to calEntries prop if same month
+    const storageKey = `flight-deck:roster:${year}-${String(month).padStart(2, '0')}`;
     const stored = loadRoster(year, month);
+    console.log(`[Sync] Storage key "${storageKey}":`, stored ? `${stored.entries?.length ?? 0} entries` : 'null');
+
     let entries = stored?.entries;
+    let source = 'storage';
     if ((!entries || entries.length === 0) && calYear === year && calMonth === month) {
       entries = calEntries;
+      source = 'calEntries';
+      console.log('[Sync] Falling back to calEntries:', calEntries.length, 'entries');
     }
     if (!entries || entries.length === 0) {
-      setSyncSummary('No roster data for this month — load the calendar first.');
+      setSyncSummary(
+        `No roster data for ${MONTH_NAMES[month - 1]} ${year} — ` +
+        `upload the Merlot roster in the Calendar tab and navigate to this month.`
+      );
       return;
     }
+    console.log(`[Sync] Using ${entries.length} entries from ${source}. Types:`,
+      [...new Set(entries.map(e => e.type))],
+      '| Sample dates:', entries.slice(0, 3).map(e => e.date)
+    );
 
     // Build date → entry lookup; skip continuation/comment rows
     const byDate = {};
     for (const e of entries) {
+      if (!e.date) continue;
       if (['CONTINUATION', 'COMMENT', 'PROFILE'].includes(e.type)) continue;
       if (!byDate[e.date]) byDate[e.date] = e;
     }
+    console.log(`[Sync] byDate has ${Object.keys(byDate).length} unique dates. Looking for ${year}-${String(month).padStart(2,'0')}-XX`);
 
     let flightCount = 0, groundCount = 0, simCount = 0;
     const monthStr = String(month).padStart(2, '0');
@@ -409,8 +424,10 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       };
     }));
 
+    console.log(`[Sync] Done — flights: ${flightCount}, ground: ${groundCount}, SIM: ${simCount}`);
     setSyncSummary(
-      `Synced: ${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
+      `Synced from ${source} (${MONTH_NAMES[month - 1]} ${year}): ` +
+      `${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
       `${groundCount} ground training, ${simCount} SIM`
     );
     setIsDirty(true);
