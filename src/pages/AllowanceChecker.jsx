@@ -449,7 +449,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     let firstRowLogged = false;
     const monthStr = String(month).padStart(2, '0');
 
-    setRows(prev => prev.map(row => {
+    const newRows = rows.map(row => {
       const fullDate = `${year}-${monthStr}-${String(row.date).padStart(2, '0')}`;
       const entry = byDate[fullDate];
       if (!entry) return row;
@@ -548,7 +548,14 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         firstRowLogged = true;
       }
       return updatedRow;
-    }));
+    });
+
+    console.log('setRows called with', newRows.length, 'rows');
+    const sampleFlight = newRows.find(r => r.domActual !== '' || r.interActual !== '');
+    if (sampleFlight) console.log('[Sync] first updated flight row:', JSON.parse(JSON.stringify(sampleFlight)));
+    else console.warn('[Sync] no rows with domActual/interActual set — check byDate matching');
+    saveAllowance(year, month, { rows: newRows });
+    setRows(newRows);
 
     const fmtMins = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
     console.log(`[Sync] Done — flights:${flightCount} ground:${groundCount} SIM:${simCount}`,
@@ -563,7 +570,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         : ' · no block minutes found (check flightTime in roster)')
     );
     setIsDirty(true);
-  }, [calEntries, calYear, calMonth, year, month]);
+  }, [calEntries, calYear, calMonth, year, month, rows]);
 
   // ─── derived totals ───────────────────────────────────────────────────────
 
@@ -576,7 +583,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     const dayObjs = [];
 
     for (const row of rows) {
-      const { isSim, isGround, isTraining, isOff } = routeFlags(row.route);
+      const { isSim, isGround, isTraining } = routeFlags(row.route);
       const { domSched, interSched, domEff, interEff, domDelta, interDelta } = rowEffective(row);
       const legs     = toInt(row.legs);
       const perDiem  = row.perDiem || null;
