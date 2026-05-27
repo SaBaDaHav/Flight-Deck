@@ -512,8 +512,8 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
             ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
             : [entry.from, entry.to].filter(Boolean).join('-');
           const { domMins, interMins } = splitBlockByType(classRoute, totalMins);
-          domActual   = domMins   > 0 ? String(domMins)   : '';
-          interActual = interMins > 0 ? String(interMins) : '';
+          domActual   = domMins   > 0 ? domMins   : '';
+          interActual = interMins > 0 ? interMins : '';
           console.log(
             `[Sync D${row.date}] block="${blockStr}"→${totalMins}min route="${classRoute}"`,
             `DOM:${domMins} INT:${interMins}`
