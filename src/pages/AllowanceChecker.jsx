@@ -449,6 +449,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     console.log(`[Sync] byDate has ${Object.keys(byDate).length} unique dates. Looking for ${year}-${String(month).padStart(2,'0')}-XX`);
 
     let flightCount = 0, groundCount = 0, simCount = 0;
+    let totalDomActual = 0, totalInterActual = 0;
     const monthStr = String(month).padStart(2, '0');
 
     setRows(prev => prev.map(row => {
@@ -480,23 +481,36 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       // CODE: auto-set only if not already filled by user
       const code = row.code || (isSim ? 'INST-SIM' : isGround ? 'SCH-INST' : '');
 
-      // DOM ACT / INT ACT: Merlot flightTime split by route classification.
-      // Uses internal hyphen route for splitBlockByType (display route uses arrows).
+      // DOM ACT / INT ACT: Merlot block time split by DOM/INTER classification.
+      // Try flightTime first, fall back to scheduledBlock (both are block time in Merlot).
+      // Uses a hyphen-joined route for splitBlockByType; display route uses arrows.
       let domActual   = '';
       let interActual = '';
-      if (!isOff && !isSim && !isGround && entry.flightTime) {
-        const classRoute = entry.sectors?.length > 0
-          ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
-          : `${entry.from || ''}-${entry.to || ''}`;
-        const totalMins = parseHhmmToMin(entry.flightTime);
-        const { domMins, interMins } = splitBlockByType(classRoute, totalMins);
-        domActual   = domMins   > 0 ? String(domMins)   : '';
-        interActual = interMins > 0 ? String(interMins) : '';
+      if (!isOff && !isSim && !isGround) {
+        const blockStr  = entry.flightTime || entry.scheduledBlock || '';
+        const totalMins = parseHhmmToMin(blockStr);
+        if (totalMins > 0) {
+          // Build classification route — filter nulls so we never get 'BKK-' (single token)
+          const classRoute = entry.sectors?.length > 0
+            ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
+            : [entry.from, entry.to].filter(Boolean).join('-');
+          const { domMins, interMins } = splitBlockByType(classRoute, totalMins);
+          domActual   = domMins   > 0 ? String(domMins)   : '';
+          interActual = interMins > 0 ? String(interMins) : '';
+          console.log(
+            `[Sync D${row.date}] block="${blockStr}"→${totalMins}min route="${classRoute}"`,
+            `DOM:${domMins} INT:${interMins}`
+          );
+        } else {
+          console.warn(`[Sync D${row.date}] no block time — flightTime="${entry.flightTime}" scheduledBlock="${entry.scheduledBlock}"`);
+        }
       }
 
       if (isSim)          simCount++;
       else if (isGround)  groundCount++;
       else if (!isOff)    flightCount++;
+      totalDomActual   += domActual   !== '' ? toInt(domActual)   : 0;
+      totalInterActual += interActual !== '' ? toInt(interActual) : 0;
 
       return {
         ...row,
@@ -513,11 +527,16 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       };
     }));
 
-    console.log(`[Sync] Done — flights: ${flightCount}, ground: ${groundCount}, SIM: ${simCount}`);
+    const fmtMins = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+    console.log(`[Sync] Done — flights:${flightCount} ground:${groundCount} SIM:${simCount}`,
+      `DOM ACT:${totalDomActual}min INT ACT:${totalInterActual}min`);
     setSyncSummary(
       `Synced from ${source} (${MONTH_NAMES[month - 1]} ${year}): ` +
       `${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
-      `${groundCount} ground training, ${simCount} SIM`
+      `${groundCount} ground training, ${simCount} SIM` +
+      (totalDomActual + totalInterActual > 0
+        ? ` · DOM ACT ${fmtMins(totalDomActual)} · INT ACT ${fmtMins(totalInterActual)}`
+        : ' · no block minutes found (check flightTime in roster)')
     );
     setIsDirty(true);
   }, [calEntries, calYear, calMonth, year, month]);
