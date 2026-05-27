@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react'; /* eslint-dis
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
-import { loadAllowance, saveAllowance, loadRates, saveRates, loadRoster } from '../lib/storage.js';
-import { splitBlockByType } from '../lib/route-parser.js';
+import { loadAllowance, saveAllowance, loadRates, saveRates, loadRoster, loadLearnedRoutes } from '../lib/storage.js';
 import { DEFAULT_RATES } from '../constants/default-rates.js';
 import { isDomestic } from '../constants/thai-airports.js';
+import { isInternational } from '../lib/airport-db.js';
+import { calcTotalBlockMinsWithLearned } from '../constants/route-block-times.js';
 import PayBreakdown from '../components/PayBreakdown.jsx';
 import RatesPanel from '../components/RatesPanel.jsx';
 
@@ -377,6 +378,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     let totalDomActual = 0, totalInterActual = 0;
     let firstRowLogged = false;
     const monthStr = String(month).padStart(2, '0');
+    const learnedRoutes = loadLearnedRoutes();
 
     const newRows = rows.map(row => {
       const fullDate = `${year}-${monthStr}-${String(row.date).padStart(2, '0')}`;
@@ -435,22 +437,32 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       let domActual   = '';
       let interActual = '';
       if (!isOff && !isSim && !isGround && !isTraining) {
-        const totalMins = entry.blockMins != null
-          ? entry.blockMins
-          : parseHhmmToMin(entry.flightTime || entry.scheduledBlock || '');
+        // Build '-' separated route for DB lookup and airport classification
+        const classRoute = entry.sectors?.length > 0
+          ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
+          : [entry.from, entry.to].filter(Boolean).join('-');
+
+        // Route DB is most reliable; fall back to stored entry data
+        const dbMins    = calcTotalBlockMinsWithLearned(classRoute, learnedRoutes);
+        const totalMins = dbMins != null
+          ? dbMins
+          : (entry.blockMins != null
+              ? entry.blockMins
+              : parseHhmmToMin(entry.flightTime || entry.scheduledBlock || ''));
+
         if (totalMins > 0) {
-          const classRoute = entry.sectors?.length > 0
-            ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
-            : [entry.from, entry.to].filter(Boolean).join('-');
-          const { domMins, interMins } = splitBlockByType(classRoute, totalMins);
-          domActual   = domMins   > 0 ? domMins   : '';
-          interActual = interMins > 0 ? interMins : '';
+          // Any INTER airport in the route → entire day is INTER (TVJ policy)
+          if (isInternational(classRoute)) {
+            interActual = totalMins;
+          } else {
+            domActual = totalMins;
+          }
           console.log(
-            `[Sync D${row.date}] block=${entry.blockMins != null ? `${entry.blockMins}min(DB)` : `"${entry.flightTime || entry.scheduledBlock || ''}"`}→${totalMins}min route="${classRoute}"`,
-            `DOM:${domMins} INT:${interMins}`
+            `[Sync D${row.date}] route="${classRoute}" block=${totalMins}min(${dbMins != null ? 'DB' : 'entry'})`,
+            `DOM:${domActual || 0} INT:${interActual || 0}`
           );
         } else {
-          console.warn(`[Sync D${row.date}] no block time — flightTime="${entry.flightTime}" scheduledBlock="${entry.scheduledBlock}"`);
+          console.warn(`[Sync D${row.date}] no block time — classRoute="${classRoute}" flightTime="${entry.flightTime}"`);
         }
       }
 

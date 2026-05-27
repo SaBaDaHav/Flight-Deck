@@ -12,6 +12,8 @@ const SEED_INTER = new Set([
   'CXR','PQC','VCA','VII','HPH','UIH','BMV','DLI','REP','PNH',
   'VTE','LPQ','RGN','CMB','DEL','BOM','DXB','DOH','MCT','KWI',
   'BAH','PKX','NKG','AMD',
+  // Chinese regional airports in TVJ route DB
+  'HGH','HFE','KHN','CSX','XUZ','WUX','TFU',
 ]);
 
 function loadLearned() {
@@ -34,6 +36,13 @@ export function learnAirport(iata, type) {
   const learned = loadLearned();
   learned[iata.toUpperCase()] = type;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(learned));
+}
+
+// Returns true if ANY 3-letter IATA code in a '-' separated route is explicitly INTER.
+// A single INTER leg makes the entire day INTER (TVJ policy).
+export function isInternational(route) {
+  const codes = (route || '').toUpperCase().split('-').filter(c => c.length === 3);
+  return codes.some(code => getAirportType(code) === 'INTER');
 }
 
 // Given an array of route strings (e.g. ["BKK-ICN", "BKK-SGN-BKK"]),
