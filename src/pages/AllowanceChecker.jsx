@@ -446,6 +446,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
     let flightCount = 0, groundCount = 0, simCount = 0, trainingCount = 0;
     let totalDomActual = 0, totalInterActual = 0;
+    let firstRowLogged = false;
     const monthStr = String(month).padStart(2, '0');
 
     setRows(prev => prev.map(row => {
@@ -530,7 +531,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       totalDomActual   += domActual   !== '' ? toInt(domActual)   : 0;
       totalInterActual += interActual !== '' ? toInt(interActual) : 0;
 
-      return {
+      const updatedRow = {
         ...row,
         route,
         legs:         (!isOff && !isSim && !isGround && !isTraining && entry.numLegs != null)
@@ -542,6 +543,11 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         domActual,
         interActual,
       };
+      if (!firstRowLogged && !isOff && (domActual !== '' || interActual !== '')) {
+        console.log('[Sync first flight row result]', JSON.parse(JSON.stringify(updatedRow)));
+        firstRowLogged = true;
+      }
+      return updatedRow;
     }));
 
     const fmtMins = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
@@ -581,7 +587,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       totalDomEff    += domEff;
       totalInterEff  += interEff;
       totalLegs      += legs;
-      if (!isOff && (domEff > 0 || interEff > 0 || isSim || isGround || isTraining)) totalDutyDays++;
+      if (toInt(row.domActual) > 0 || toInt(row.interActual) > 0 || isSim || isGround) totalDutyDays++;
       if (isSim) simDays++;
       if (perDiem === 'DOM')   pdDom++;
       if (perDiem === 'INTER') pdInter++;
