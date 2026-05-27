@@ -64,6 +64,9 @@ export function loadRoster(year, month) {
 }
 
 export function saveRoster(year, month, data) {
+  const firstFlight = data.entries?.find(e => e.type === 'FLIGHT');
+  console.log('[saveRoster] first FLIGHT flightTime:', firstFlight?.flightTime,
+    '| scheduledBlock:', firstFlight?.scheduledBlock);
   return save(key('roster', `${year}-${String(month).padStart(2, '0')}`), data);
 }
 

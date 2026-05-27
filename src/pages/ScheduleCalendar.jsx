@@ -217,8 +217,16 @@ export default function ScheduleCalendar({
         saveCrewProfile(merged.crew);
       }
 
-      // Save raw entries (no _ftl* computed fields) under the correct month key
-      const rawEntries = merged.entries;
+      // Save raw entries (no _ftl* computed fields) under the correct month key.
+      // Defensive: if AI omitted flightTime (undefined → dropped by JSON.stringify),
+      // fall back to scheduledBlock so syncFromCalendar always has block minutes.
+      const rawEntries = merged.entries.map(e => ({
+        ...e,
+        flightTime: e.flightTime ?? e.scheduledBlock ?? null,
+      }));
+      const firstFlight = rawEntries.find(e => e.type === 'FLIGHT');
+      console.log('[processFiles] first FLIGHT before save — flightTime:', firstFlight?.flightTime,
+        '| scheduledBlock:', firstFlight?.scheduledBlock, '| date:', firstFlight?.date);
       saveRoster(targetYear, targetMonth, {
         entries: rawEntries,
         totals:  merged.totals,

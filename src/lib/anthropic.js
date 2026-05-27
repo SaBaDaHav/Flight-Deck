@@ -233,6 +233,11 @@ Return this exact JSON schema:
 \`\`\`
 
 FIELD RULES:
+- scheduledBlock: value from the "Scheduled Route Block" column (H:MM block duration, e.g. "5:35")
+- flightTime: value from the "Flight Time" column (H:MM, the column immediately to the RIGHT of Scheduled Route Block). MUST be extracted — never leave null if the column has a value.
+- dutyTime: value from the "Duty Time" column (H:MM)
+- tafb: value from the "TAFB Time" column — null/omit if the cell is blank
+- restTime: value from the "Rest Time" column
 - releaseNextDay: true when Release column shows "-->" OR "HH:MM +1"
 - nightDuty: true if duty period encroaches 02:00–04:59 local time
 - earlyStart: true if Report time is 05:00–05:59
@@ -241,7 +246,6 @@ FIELD RULES:
 - numLegs: number of takeoff-landing legs (count of sectors)
 - layover: true if TAFB column has a value OR <Accom> appears in sector string
 - from/to: IATA codes from the From/To columns
-- tafb: blank/null if not away from base
 - For CONTINUATION rows: copy report/release/sectors from the preceding FLIGHT row
 - Totals row at bottom: put in "totals" field (last row of the table, not an entry)
 - Include EVERY row — do not skip any`;
