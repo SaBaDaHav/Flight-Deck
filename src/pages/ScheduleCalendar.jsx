@@ -105,13 +105,14 @@ function routeToSectors(route) {
 // Convert AI mobile entries into the same schema used by desktop roster entries.
 // selectedYear: force all parsed dates to this year (fixes AI defaulting to wrong year).
 function postProcessMobileEntries(rawEntries, selectedYear) {
+  const yearToUse = selectedYear || new Date().getFullYear();
   return rawEntries.map(e => {
-    // Correct year if AI returned wrong year (e.g. 2025 instead of 2026)
+    // Correct year if AI returned wrong year (e.g. 2025 or 2020 instead of 2026)
     let date = e.date;
-    if (date && selectedYear) {
+    if (date) {
       const parsedYear = parseInt(date.slice(0, 4), 10);
-      if (!isNaN(parsedYear) && parsedYear !== selectedYear) {
-        date = `${selectedYear}${date.slice(4)}`;
+      if (!isNaN(parsedYear) && parsedYear !== yearToUse) {
+        date = `${yearToUse}${date.slice(4)}`;
       }
     }
 

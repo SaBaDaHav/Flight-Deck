@@ -108,8 +108,9 @@ export function mergeRosterResults(results) {
 export async function analyzeMobileRoster(imageBase64, selectedYear) {
   const base64Data = imageBase64.split(',')[1];
   const mediaType  = imageBase64.split(';')[0].split(':')[1];
-  const year = selectedYear || new Date().getFullYear();
-  const prompt = MOBILE_ROSTER_PROMPT.replace(/\{\{YEAR\}\}/g, year);
+  const yearToUse  = selectedYear || new Date().getFullYear();
+  console.log('[Mobile] selectedYear passed in:', selectedYear, '→ yearToUse:', yearToUse);
+  const prompt = MOBILE_ROSTER_PROMPT.replace(/\{\{YEAR\}\}/g, yearToUse);
 
   const body = {
     model: MODEL,
@@ -140,7 +141,9 @@ export async function analyzeMobileRoster(imageBase64, selectedYear) {
   const text = data.content?.[0]?.text || '';
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   const parsed = JSON.parse(clean);
-  return Array.isArray(parsed) ? parsed : (parsed.entries || []);
+  const entries = Array.isArray(parsed) ? parsed : (parsed.entries || []);
+  console.log('[Mobile] first date from AI:', entries[0]?.date);
+  return entries;
 }
 
 const MOBILE_ROSTER_PROMPT = `This is a Merlot mobile app Duties List screenshot from Thai VietJet Air.
