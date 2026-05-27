@@ -99,7 +99,65 @@ export function mergeRosterResults(results) {
   return { crew: base.crew, entries: merged, totals };
 }
 
-// ─── Prompt ───────────────────────────────────────────────────────────────────
+// ─── HR allowance sheet extraction ───────────────────────────────────────────
+
+// Analyze an HR monthly allowance email (image or PDF) and return extracted rows.
+// Returns array of { date, route, domMins, interMins, legs, perDiem, code, sim }
+export async function analyzeHrSheet(fileBase64, mediaType) {
+  const base64Data = fileBase64.split(',')[1];
+  const isPdf = mediaType === 'application/pdf';
+
+  const fileBlock = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64Data } }
+    : { type: 'image',    source: { type: 'base64', media_type: mediaType,          data: base64Data } };
+
+  const body = {
+    model: MODEL,
+    max_tokens: 4096,
+    messages: [
+      { role: 'user', content: [fileBlock, { type: 'text', text: HR_SHEET_PROMPT }] },
+    ],
+  };
+
+  const resp = await fetch(getEndpoint('/v1/messages'), {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Anthropic API error ${resp.status}: ${err}`);
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '';
+
+  // Strip any markdown fences the model might add despite instructions
+  const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const parsed = JSON.parse(clean);
+  return Array.isArray(parsed) ? parsed : (parsed.rows || []);
+}
+
+const HR_SHEET_PROMPT = `You are analyzing a Thai VietJet Air HR monthly allowance sheet (People Department email).
+
+The table has these columns left to right:
+DATE | ROUTE/DUTY | BLOCK DOM | BLOCK INTER | SEC | DUTY | SIM | TRANSPORT | PERDIEM DOM | PERDIEM INTER | CODE(1-7)
+
+RULES:
+- BLOCK DOM and BLOCK INTER are already in MINUTES (e.g. 325 = 5h 25m). Do NOT convert.
+- DATE column: only rows where DATE is a number 1–31 are data rows. Skip the header and the totals/footer row.
+- The last row (totals) has sums in the footer — skip it entirely.
+- perDiem: "DOM" if PERDIEM DOM column has a value; "INTER" if PERDIEM INTER has a value; null if both blank.
+- sim: 1 if the SIM column has any mark or value; 0 otherwise.
+- legs: SEC column value as integer (e.g. 1.0 → 1); 0 if blank.
+- code: CODE 1-7 column as string (e.g. "1", "DH-Sec1"); "" if blank.
+- domMins / interMins: 0 if the column is blank or shows a dash.
+
+Return ONLY a valid JSON array — no markdown, no explanation, no code fences. One object per calendar date row.
+Schema: [{"date":1,"route":"BKK-ICN","domMins":0,"interMins":325,"legs":1,"perDiem":"INTER","code":"","sim":0}]`;
+
+// ─── Roster prompt ────────────────────────────────────────────────────────────
 const ROSTER_EXTRACTION_PROMPT = `You are analyzing a Thai VietJet Air (TVJ) Merlot Employee Roster Report image.
 
 Extract ALL roster entries for every row shown and return ONLY a valid JSON object — no explanation, no markdown outside the JSON block.
