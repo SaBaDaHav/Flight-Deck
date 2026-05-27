@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { classifyRoute, splitBlockByType } from '../lib/route-parser.js';
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
-import { loadAllowance, saveAllowance, loadRates, saveRates } from '../lib/storage.js';
+import { loadAllowance, saveAllowance, loadRates, saveRates, loadRoster } from '../lib/storage.js';
 import { DEFAULT_RATES } from '../constants/default-rates.js';
 import { isDomestic } from '../constants/thai-airports.js';
 import PayBreakdown from '../components/PayBreakdown.jsx';
@@ -33,11 +32,6 @@ function makeEmptyRow(date) {
 
 function toInt(str) {
   const n = parseInt(str, 10);
-  return isNaN(n) ? 0 : n;
-}
-
-function toFloat(str) {
-  const n = parseFloat(str);
   return isNaN(n) ? 0 : n;
 }
 
@@ -77,10 +71,10 @@ function parseHhmmToMin(str) {
 function buildRouteFromCalEntry(entry) {
   if (entry.sectors && entry.sectors.length > 0) {
     const airports = [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)];
-    return airports.join('-');
+    return airports.join('→');
   }
-  if (entry.from && entry.to) return `${entry.from}-${entry.to}`;
-  return '';
+  if (entry.from && entry.to) return `${entry.from}→${entry.to}`;
+  return entry.dutyCode || '';
 }
 
 function getPerDiemFromCalEntry(entry) {
@@ -302,8 +296,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     return Array.from({ length: n }, (_, i) => makeEmptyRow(i + 1));
   });
   const [rates, setRates] = useState(() => loadRates() || { ...DEFAULT_RATES });
-  const [showRates, setShowRates] = useState(false);
-  const [isDirty,   setIsDirty]   = useState(false);
+  const [showRates,    setShowRates]    = useState(false);
+  const [isDirty,      setIsDirty]      = useState(false);
+  const [syncSummary,  setSyncSummary]  = useState('');
 
   // Reload from storage when month/year changes
   useEffect(() => {
@@ -338,31 +333,88 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     setIsDirty(false);
   };
 
+  // True when there is roster data available for the currently selected month
+  const hasRosterData = useMemo(() => {
+    const stored = loadRoster(year, month);
+    if (stored?.entries?.length > 0) return true;
+    if (calYear === year && calMonth === month && calEntries.length > 0) return true;
+    return false;
+  }, [year, month, calYear, calMonth, calEntries]);
+
   const syncFromCalendar = useCallback(() => {
-    const flightEntries = calEntries.filter(e => e.type === 'FLIGHT');
+    // Read from storage first; fall back to calEntries prop if same month
+    const stored = loadRoster(year, month);
+    let entries = stored?.entries;
+    if ((!entries || entries.length === 0) && calYear === year && calMonth === month) {
+      entries = calEntries;
+    }
+    if (!entries || entries.length === 0) {
+      setSyncSummary('No roster data for this month — load the calendar first.');
+      return;
+    }
+
+    // Build date → entry lookup; skip continuation/comment rows
+    const byDate = {};
+    for (const e of entries) {
+      if (['CONTINUATION', 'COMMENT', 'PROFILE'].includes(e.type)) continue;
+      if (!byDate[e.date]) byDate[e.date] = e;
+    }
+
+    let flightCount = 0, groundCount = 0, simCount = 0;
+    const monthStr = String(month).padStart(2, '0');
+
     setRows(prev => prev.map(row => {
-      const dayStr  = String(row.date).padStart(2, '0');
-      const monthStr = String(calMonth).padStart(2, '0');
-      const fullDate = `${calYear}-${monthStr}-${dayStr}`;
-      const entry = flightEntries.find(e => e.date === fullDate);
+      const fullDate = `${year}-${monthStr}-${String(row.date).padStart(2, '0')}`;
+      const entry = byDate[fullDate];
       if (!entry) return row;
 
-      const route      = buildRouteFromCalEntry(entry);
-      const totalMins  = parseHhmmToMin(entry.flightTime);
-      const { domMins, interMins } = splitBlockByType(route, totalMins);
-      const perDiem    = getPerDiemFromCalEntry(entry);
+      const type      = entry.type || 'FLIGHT';
+      const codeUpper = (entry.dutyCode || '').toUpperCase();
+
+      // Detect SIM / GROUND_TRAINING from type or dutyCode keywords
+      const isSim    = type === 'SIM' || codeUpper.includes('SIM') || codeUpper.includes('FFS');
+      const isGround = !isSim && (
+        type === 'GROUND_TRAINING' ||
+        codeUpper.includes('GNDTNG') || codeUpper.includes('TRAINING') || codeUpper.includes('GND')
+      );
+      const isOff    = type === 'OFF' || type === 'RERRP36' || type === 'RERRP2LD' || type === 'STANDBY';
+
+      // Route string must match routeFlags() keyword patterns for correct pay calc
+      let route;
+      if (isSim)        route = 'INST SIM FFS';
+      else if (isGround) route = 'GROUND TRAINING INST';
+      else if (isOff)    route = entry.dutyCode || '';
+      else               route = buildRouteFromCalEntry(entry);
+
+      // Per diem from last overnight station
+      const perDiem = getPerDiemFromCalEntry(entry);
+
+      // CODE: auto-set only if not already filled by user
+      const code = row.code || (isSim ? 'INST-SIM' : isGround ? 'SCH-INST' : '');
+
+      if (isSim)          simCount++;
+      else if (isGround)  groundCount++;
+      else if (!isOff)    flightCount++;
 
       return {
         ...row,
-        route:          route || row.route,
-        domScheduled:   domMins   > 0 ? String(domMins)   : row.domScheduled,
-        interScheduled: interMins > 0 ? String(interMins) : row.interScheduled,
-        legs:           entry.numLegs != null ? String(entry.numLegs) : row.legs,
-        perDiem:        perDiem !== '' ? perDiem : row.perDiem,
+        route,
+        legs:         (!isOff && entry.numLegs != null) ? String(entry.numLegs) : row.legs,
+        perDiem:      perDiem !== '' ? perDiem : row.perDiem,
+        simCount:     isSim    ? '1' : '0',
+        instSessions: isGround ? '1' : '0',
+        code,
+        // domScheduled / interScheduled / domActual / interActual intentionally untouched
+        // — those columns are filled manually from the HR email
       };
     }));
+
+    setSyncSummary(
+      `Synced: ${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
+      `${groundCount} ground training, ${simCount} SIM`
+    );
     setIsDirty(true);
-  }, [calEntries, calYear, calMonth]);
+  }, [calEntries, calYear, calMonth, year, month]);
 
   // ─── derived totals ───────────────────────────────────────────────────────
 
@@ -476,11 +528,11 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           </button>
 
           {/* Sync from calendar */}
-          {calEntries.filter(e => e.type === 'FLIGHT').length > 0 && calYear === year && calMonth === month && (
+          {hasRosterData && (
             <button
               onClick={syncFromCalendar}
               className="text-sm px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
-              title="Populate HR-scheduled columns from the loaded Merlot roster"
+              title="Fill route / legs / per diem from saved Merlot roster. HR block minutes are entered separately from the HR email."
             >
               Sync from Calendar
             </button>
@@ -495,6 +547,13 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           </button>
         </div>
       </div>
+
+      {/* Sync summary */}
+      {syncSummary && (
+        <div className="px-3 py-2 bg-emerald-900/30 border border-emerald-700/40 rounded-lg text-xs text-emerald-300">
+          {syncSummary}
+        </div>
+      )}
 
       {/* Rates panel */}
       {showRates && (
