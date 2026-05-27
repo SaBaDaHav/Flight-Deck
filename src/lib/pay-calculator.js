@@ -21,9 +21,11 @@ export function calcDayPay(day, rates = DEFAULT_RATES) {
   const isSim     = day.isSim     || false;
   const isGround  = day.isGround  || false;
 
+  const isTraining = day.isTraining || false;
+
   // Transport: all activity types qualify; INTER departure days are excluded
   // (pilot receives per diem instead on those days)
-  const hasActivity = domMins > 0 || interMins > 0 || isSim || isGround;
+  const hasActivity = domMins > 0 || interMins > 0 || isSim || isGround || isTraining;
   const isInterDep  = perDiem === 'INTER';
   const transport   = (hasActivity && !isInterDep) ? r(rates, 'transportRate') : 0;
 
@@ -65,7 +67,8 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
   let totalInterMins = 0;
   let totalLegs      = 0;
   let flightDays     = 0;   // days with any block time
-  let gndTrgDays     = 0;   // GROUND TRAINING INST days
+  let gndTrgDays     = 0;   // GROUND TRAINING INST days (transport + ค่าสอน)
+  let trainingDays   = 0;   // CBT/recurrent training days (transport only, no ค่าสอน)
   let interDepDays   = 0;   // INTER departure days (perDiem === 'INTER')
   let interNights    = 0;   // same count as interDepDays
   const simDays      = simCount;
@@ -77,12 +80,13 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
     totalInterMins += interMins;
     totalLegs      += day.legs || 0;
     if (domMins > 0 || interMins > 0) flightDays++;
-    if (day.isGround) gndTrgDays++;
+    if (day.isGround)   gndTrgDays++;
+    if (day.isTraining) trainingDays++;
     if (day.perDiem === 'INTER') { interDepDays++; interNights++; }
   }
 
-  // Transport: (flightDays + gndTrgDays + simDays − interDepDays) × rate
-  const transportDays = Math.max(0, flightDays + gndTrgDays + simDays - interDepDays);
+  // Transport: (flightDays + gndTrgDays + trainingDays + simDays − interDepDays) × rate
+  const transportDays = Math.max(0, flightDays + gndTrgDays + trainingDays + simDays - interDepDays);
   const transport     = transportDays * r(rates, 'transportRate');
 
   // Sector

@@ -39,10 +39,11 @@ function toInt(str) {
 
 function routeFlags(route) {
   const u = (route || '').trim().toUpperCase();
-  const isSim    = u.includes('FFS') || (u.includes('INST') && u.includes('SIM'));
-  const isGround = !isSim && (u.includes('GROUND TRAINING') || (u.startsWith('INST') && u.length < 20));
-  const isOff    = !u || u === 'OFF';
-  return { isSim, isGround, isOff };
+  const isSim      = u.includes('FFS') || (u.includes('INST') && u.includes('SIM'));
+  const isGround   = !isSim && (u.includes('GROUND TRAINING') || (u.startsWith('INST') && u.length < 20));
+  const isTraining = !isSim && !isGround && u === 'TRAINING';
+  const isOff      = !u || u === 'OFF';
+  return { isSim, isGround, isTraining, isOff };
 }
 
 function rowEffective(row) {
@@ -125,7 +126,7 @@ function TableInput({ value, onChange, placeholder = '', className = '', type = 
 }
 
 function AllowanceRow({ row, idx, onUpdate, rates }) {
-  const { isSim, isGround, isOff } = routeFlags(row.route);
+  const { isSim, isGround, isTraining, isOff } = routeFlags(row.route);
   const { domEff, interEff, domDelta, interDelta } = rowEffective(row);
   const disc = rowDiscrepancy(row);
 
@@ -140,8 +141,9 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
     perDiem,
     isSim,
     isGround,
+    isTraining,
     instSessions: instSess,
-  }, rates), [domEff, interEff, legs, perDiem, isSim, isGround, instSess, rates]);
+  }, rates), [domEff, interEff, legs, perDiem, isSim, isGround, isTraining, instSess, rates]);
 
   const set = useCallback(field => val => onUpdate(row.date, field, val), [row.date, onUpdate]);
 
@@ -256,6 +258,10 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
       <td className="px-1 py-0.5 w-10 text-center">
         {isSim ? (
           <span className="text-xs text-amber-400">FFS</span>
+        ) : isGround ? (
+          <span className="text-xs text-sky-400">INST</span>
+        ) : isTraining ? (
+          <span className="text-xs text-slate-400">TRG</span>
         ) : instSess > 0 ? (
           <span className="text-xs text-sky-400">{instSess}×</span>
         ) : (
@@ -265,7 +271,7 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
 
       {/* Day pay */}
       <td className="px-2 py-1 text-right w-24">
-        {!isOff && (domEff > 0 || interEff > 0 || isSim) ? (
+        {!isOff && (domEff > 0 || interEff > 0 || isSim || isGround || isTraining) ? (
           <span className="text-xs text-slate-400 font-mono">{fmtThb(dayPay.total)}</span>
         ) : (
           <span className="text-xs text-slate-700">—</span>
@@ -438,7 +444,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     }
     console.log(`[Sync] byDate has ${Object.keys(byDate).length} unique dates. Looking for ${year}-${String(month).padStart(2,'0')}-XX`);
 
-    let flightCount = 0, groundCount = 0, simCount = 0;
+    let flightCount = 0, groundCount = 0, simCount = 0, trainingCount = 0;
     let totalDomActual = 0, totalInterActual = 0;
     const monthStr = String(month).padStart(2, '0');
 
@@ -450,20 +456,44 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       const type      = entry.type || 'FLIGHT';
       const codeUpper = (entry.dutyCode || '').toUpperCase();
 
-      // Detect SIM / GROUND_TRAINING from type or dutyCode keywords
-      const isSim    = type === 'SIM' || codeUpper.includes('SIM') || codeUpper.includes('FFS');
-      const isGround = !isSim && (
+      // Check pairing comments for SIM indicators (CAE simulator sessions)
+      const commentsStr   = (entry.comments || []).join(' ').toUpperCase();
+      const hasSimComment = commentsStr.includes('CAE FFS') ||
+                            commentsStr.includes('COURSE: B737') ||
+                            commentsStr.includes('COURSE:B737');
+
+      // TVJ-specific duty detection — order: specific before generic
+      const isBoeing   = codeUpper.startsWith('B-SB');                                     // B-SBM-1, B-SBA-1 Boeing standby
+      const isDemo     = codeUpper.includes('DEMO');                                        // DEMO INS-1
+      const isCbt      = codeUpper.startsWith('CBT') ||                                    // CBT-B737
+                         (codeUpper.endsWith('-GRT') && codeUpper.length > 4);             // B737-GRT
+      const isAsi      = codeUpper === 'ASI';                                              // Airplane Systems Integration
+      const isTr6      = codeUpper.startsWith('TR6') ||                                   // TR609/TR610 by duty code
+                         (entry.sectors || []).some(s =>
+                           String(s.flight || '').toUpperCase().startsWith('TR6'));        // TR6xx by sector flight#
+
+      // Primary type flags (more-specific overrides prevent mis-classification)
+      const isSim    = !isBoeing && !isDemo && !isCbt && !isAsi && !isTr6 && (
+        type === 'SIM' || codeUpper.includes('SIM') || codeUpper.includes('FFS') || hasSimComment
+      );
+      const isGround = !isSim && !isBoeing && !isDemo && !isCbt && !isTr6 && (
+        isAsi ||
         type === 'GROUND_TRAINING' ||
         codeUpper.includes('GNDTNG') || codeUpper.includes('TRAINING') || codeUpper.includes('GND')
       );
-      const isOff    = type === 'OFF' || type === 'RERRP36' || type === 'RERRP2LD' || type === 'STANDBY';
+      const isTraining = !isSim && !isGround && isCbt;  // transport yes, ค่าสอน no
+      const isOff      = isBoeing || isDemo ||
+                         type === 'OFF' || type === 'RERRP36' || type === 'RERRP2LD' || type === 'STANDBY';
 
       // Route string must match routeFlags() keyword patterns for correct pay calc
       let route;
-      if (isSim)         route = 'INST SIM FFS';
-      else if (isGround) route = 'GROUND TRAINING INST';
-      else if (isOff)    route = entry.dutyCode || '';
-      else               route = buildRouteFromCalEntry(entry);
+      if (isSim)           route = 'INST SIM FFS';
+      else if (isGround)   route = 'GROUND TRAINING INST';
+      else if (isTraining) route = 'TRAINING';
+      else if (isDemo)     route = 'DEMO INS';
+      else if (isBoeing)   route = entry.dutyCode || '';
+      else if (isOff)      route = entry.dutyCode || '';
+      else                 route = buildRouteFromCalEntry(entry);
 
       // Per diem from last overnight station
       const perDiem = getPerDiemFromCalEntry(entry);
@@ -471,16 +501,13 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       // CODE: auto-set only if not already filled by user
       const code = row.code || (isSim ? 'INST-SIM' : isGround ? 'SCH-INST' : '');
 
-      // DOM ACT / INT ACT: Merlot block time split by DOM/INTER classification.
-      // Try flightTime first, fall back to scheduledBlock (both are block time in Merlot).
-      // Uses a hyphen-joined route for splitBlockByType; display route uses arrows.
+      // Block time: only for real flights (normal + TR6 positioning)
       let domActual   = '';
       let interActual = '';
-      if (!isOff && !isSim && !isGround) {
+      if (!isOff && !isSim && !isGround && !isTraining) {
         const blockStr  = entry.flightTime || entry.scheduledBlock || '';
         const totalMins = parseHhmmToMin(blockStr);
         if (totalMins > 0) {
-          // Build classification route — filter nulls so we never get 'BKK-' (single token)
           const classRoute = entry.sectors?.length > 0
             ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
             : [entry.from, entry.to].filter(Boolean).join('-');
@@ -496,24 +523,24 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         }
       }
 
-      if (isSim)          simCount++;
-      else if (isGround)  groundCount++;
-      else if (!isOff)    flightCount++;
+      if (isSim)             simCount++;
+      else if (isGround)     groundCount++;
+      else if (isTraining)   trainingCount++;
+      else if (!isOff)       flightCount++;
       totalDomActual   += domActual   !== '' ? toInt(domActual)   : 0;
       totalInterActual += interActual !== '' ? toInt(interActual) : 0;
 
       return {
         ...row,
         route,
-        legs:         (!isOff && entry.numLegs != null) ? String(entry.numLegs) : row.legs,
+        legs:         (!isOff && !isSim && !isGround && !isTraining && entry.numLegs != null)
+                        ? String(entry.numLegs) : row.legs,
         perDiem:      perDiem !== '' ? perDiem : row.perDiem,
-        simCount:     isSim    ? '1' : '0',
-        instSessions: isGround ? '1' : '0',
+        simCount:     isSim     ? '1' : '0',
+        instSessions: isGround  ? '1' : '0',
         code,
-        // DOM ACT / INT ACT = Merlot actual (what you flew per the roster)
         domActual,
         interActual,
-        // domScheduled / interScheduled left untouched — filled by HR upload
       };
     }));
 
@@ -524,6 +551,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       `Synced from ${source} (${MONTH_NAMES[month - 1]} ${year}): ` +
       `${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
       `${groundCount} ground training, ${simCount} SIM` +
+      (trainingCount > 0 ? `, ${trainingCount} recurrent training` : '') +
       (totalDomActual + totalInterActual > 0
         ? ` · DOM ACT ${fmtMins(totalDomActual)} · INT ACT ${fmtMins(totalInterActual)}`
         : ' · no block minutes found (check flightTime in roster)')
@@ -542,7 +570,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     const dayObjs = [];
 
     for (const row of rows) {
-      const { isSim, isGround, isOff } = routeFlags(row.route);
+      const { isSim, isGround, isTraining, isOff } = routeFlags(row.route);
       const { domSched, interSched, domEff, interEff, domDelta, interDelta } = rowEffective(row);
       const legs     = toInt(row.legs);
       const perDiem  = row.perDiem || null;
@@ -553,7 +581,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       totalDomEff    += domEff;
       totalInterEff  += interEff;
       totalLegs      += legs;
-      if (!isOff && (domEff > 0 || interEff > 0 || isSim)) totalDutyDays++;
+      if (!isOff && (domEff > 0 || interEff > 0 || isSim || isGround || isTraining)) totalDutyDays++;
       if (isSim) simDays++;
       if (perDiem === 'DOM')   pdDom++;
       if (perDiem === 'INTER') pdInter++;
@@ -584,6 +612,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         perDiem,
         isSim,
         isGround,
+        isTraining,
         instSessions: instSess,
       });
     }
