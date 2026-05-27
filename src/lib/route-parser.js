@@ -1,4 +1,4 @@
-import { isDomestic } from '../constants/thai-airports.js';
+import { getAirportType } from './airport-db.js';
 
 // Parse "BKK-SGN-BKK" or "BKK-CNX-BKK-CEI-BKK" style route strings.
 // A single airport code (no hyphens) means 0 legs (e.g. "OFF", "BKK").
@@ -19,7 +19,7 @@ export function countLegs(route) {
 // A single inter leg makes the entire day INTER (TVJ policy).
 export function isInterRoute(route) {
   const airports = parseAirports(route);
-  return airports.some(code => !isDomestic(code) && code !== '');
+  return airports.some(code => code !== '' && getAirportType(code) !== 'DOM');
 }
 
 // Classify a single day's route into DOM | INTER | OFF | SIM | GROUND | UNKNOWN

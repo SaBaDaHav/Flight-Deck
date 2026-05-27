@@ -99,6 +99,74 @@ export function mergeRosterResults(results) {
   return { crew: base.crew, entries: merged, totals };
 }
 
+// ─── Mobile Merlot List View extraction ──────────────────────────────────────
+
+// Analyze a Merlot mobile app "Duties List" screenshot.
+// Returns a raw array of { dutyCode, route, date, dow, report, release,
+//   releaseNextDay, releaseDate } objects — caller does type/block post-processing.
+export async function analyzeMobileRoster(imageBase64) {
+  const base64Data = imageBase64.split(',')[1];
+  const mediaType  = imageBase64.split(';')[0].split(':')[1];
+
+  const body = {
+    model: MODEL,
+    max_tokens: 4096,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+          { type: 'text',  text: MOBILE_ROSTER_PROMPT },
+        ],
+      },
+    ],
+  };
+
+  const resp = await fetch(getEndpoint('/v1/messages'), {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Anthropic API error ${resp.status}: ${err}`);
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '';
+  const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const parsed = JSON.parse(clean);
+  return Array.isArray(parsed) ? parsed : (parsed.entries || []);
+}
+
+const MOBILE_ROSTER_PROMPT = `This is a Merlot mobile app Duties List screenshot from Thai VietJet Air.
+
+Each duty entry has TWO lines:
+  Line 1: DUTY_CODE: ROUTE
+  Line 2: Mon DD (Day) HH:MM L - [Mon DD (Day)] HH:MM L
+
+Examples:
+  "ICN2-1: BKK-ICN" / "Jun 01 (Mo) 00:55 L - 10:30 L"
+  "PKX-1: BKK-PKX" / "Jun 08 (Mo) 16:50 L - Jun 09 (Tu) 00:45 L"
+  "RERRP36-1: BKKBKK" / "Jun 06 (Sa) 00:00 L - 23:59 L"
+  "970 PUR SIC-1: BKK-SGN-BKK" / "Jun 07 (Su) 10:35 L - 16:55 L"
+
+RULES:
+- dutyCode: everything before the colon on line 1 (e.g. "ICN2-1", "970 PUR SIC-1")
+- route: everything after the colon on line 1 (e.g. "BKK-ICN", "BKK-SGN-BKK")
+  If the route has no dashes (e.g. "BKKICN"), split into 3-letter codes: "BKK-ICN"
+  If route is "BKKBKK" use "BKK-BKK"
+- date: the date from line 2 start, as YYYY-MM-DD (assume current year if not shown)
+- dow: 3-letter day abbreviation (Mon/Tue/Wed/Thu/Fri/Sat/Sun) from the (XX) abbreviation
+- report: HH:MM — the first time on line 2 (strip the L suffix)
+- release: HH:MM — the last time on line 2 (strip the L suffix)
+- releaseNextDay: true if line 2 shows a second date before the release time
+- releaseDate: the release date as YYYY-MM-DD if different from date; otherwise omit
+
+Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
+Schema: [{"dutyCode":"ICN2-1","route":"BKK-ICN","date":"2026-06-01","dow":"Mon","report":"00:55","release":"10:30","releaseNextDay":false}]`;
+
 // ─── HR allowance sheet extraction ───────────────────────────────────────────
 
 // Analyze an HR monthly allowance email (image or PDF) and return extracted rows.

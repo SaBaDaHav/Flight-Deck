@@ -1,9 +1,8 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; /* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect, useMemo, useCallback } from 'react'; /* eslint-disable react-hooks/set-state-in-effect */
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
 import { loadAllowance, saveAllowance, loadRates, saveRates, loadRoster } from '../lib/storage.js';
-import { analyzeHrSheet } from '../lib/anthropic.js';
 import { splitBlockByType } from '../lib/route-parser.js';
 import { DEFAULT_RATES } from '../constants/default-rates.js';
 import { isDomestic } from '../constants/thai-airports.js';
@@ -306,10 +305,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
   const [showRates,    setShowRates]    = useState(false);
   const [isDirty,      setIsDirty]      = useState(false);
   const [syncSummary,  setSyncSummary]  = useState('');
-  const [hrLoading,    setHrLoading]    = useState(false);
-  const [hrError,      setHrError]      = useState('');
-  const [hrSummary,    setHrSummary]    = useState('');
-  const hrFileRef = useRef(null);
 
   // Reload from storage when month/year changes
   useEffect(() => {
@@ -343,64 +338,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     saveAllowance(year, month, { rows });
     setIsDirty(false);
   };
-
-  const uploadHrSheet = useCallback(async (file) => {
-    if (!file) return;
-    setHrLoading(true);
-    setHrError('');
-    setHrSummary('');
-
-    try {
-      const base64    = await fileToBase64(file);
-      const mediaType = file.type || 'image/jpeg';
-      const hrRows    = await analyzeHrSheet(base64, mediaType);
-
-      if (!Array.isArray(hrRows) || hrRows.length === 0) {
-        throw new Error('No rows extracted — check the image is clear and shows the allowance table.');
-      }
-
-      // Index by day number (1-31)
-      const byDay = {};
-      for (const r of hrRows) {
-        const d = parseInt(r.date, 10);
-        if (d >= 1 && d <= 31) byDay[d] = r;
-      }
-
-      let loadedCount = 0;
-      setRows(prev => prev.map(row => {
-        const hr = byDay[row.date];
-        if (!hr) return row;
-        loadedCount++;
-
-        const domMins  = parseInt(hr.domMins,  10) || 0;
-        const interMins = parseInt(hr.interMins, 10) || 0;
-        const hrLegs   = parseInt(hr.legs,     10) || 0;
-
-        return {
-          ...row,
-          // DOM HR / INT HR: what the HR sheet says (scheduled baseline)
-          domScheduled:  domMins  > 0 ? String(domMins)  : '',
-          interScheduled: interMins > 0 ? String(interMins) : '',
-          // Fill structural fields only if Merlot sync hasn't set them yet
-          route:    row.route    || hr.route   || '',
-          legs:     row.legs     || (hrLegs > 0 ? String(hrLegs) : ''),
-          perDiem:  row.perDiem  || hr.perDiem || '',
-          code:     row.code     || hr.code    || '',
-          simCount: hr.sim ? '1' : row.simCount,
-          // domActual / interActual intentionally untouched — set by Merlot sync
-        };
-      }));
-
-      setHrSummary(`Loaded ${loadedCount} rows from HR sheet`);
-      setIsDirty(true);
-    } catch (err) {
-      setHrError(err.message || 'Failed to analyze HR sheet.');
-    } finally {
-      setHrLoading(false);
-      // Reset file input so the same file can be re-uploaded if needed
-      if (hrFileRef.current) hrFileRef.current.value = '';
-    }
-  }, []);
 
   // True when there is roster data available for the currently selected month
   const hasRosterData = useMemo(() => {
@@ -684,23 +621,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
             {isDirty ? 'Save' : 'Saved'}
           </button>
 
-          {/* Upload HR Sheet */}
-          <button
-            onClick={() => hrFileRef.current?.click()}
-            disabled={hrLoading}
-            className="text-sm px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-            title="Upload HR allowance email (image or PDF) to populate DOM HR / INT HR columns"
-          >
-            {hrLoading ? 'Reading…' : 'Upload HR Sheet'}
-          </button>
-          <input
-            ref={hrFileRef}
-            type="file"
-            accept="image/*,application/pdf"
-            className="hidden"
-            onChange={e => { if (e.target.files?.[0]) uploadHrSheet(e.target.files[0]); }}
-          />
-
           {/* Sync from calendar */}
           {hasRosterData && (
             <button
@@ -721,18 +641,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           </button>
         </div>
       </div>
-
-      {/* HR upload feedback */}
-      {hrError && (
-        <div className="px-3 py-2 bg-red-900/30 border border-red-700/40 rounded-lg text-xs text-red-300">
-          HR upload error: {hrError}
-        </div>
-      )}
-      {hrSummary && !hrError && (
-        <div className="px-3 py-2 bg-amber-900/30 border border-amber-700/40 rounded-lg text-xs text-amber-300">
-          {hrSummary}
-        </div>
-      )}
 
       {/* Sync summary */}
       {syncSummary && (

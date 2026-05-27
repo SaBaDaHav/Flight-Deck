@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { analyzeRosterImage, mergeRosterResults } from '../lib/anthropic.js';
+import { analyzeRosterImage, mergeRosterResults, analyzeMobileRoster } from '../lib/anthropic.js';
 import { analyzeEntry, getMinRest } from '../lib/ftl-rules.js';
 import { loadRoster, saveRoster, saveCrewProfile } from '../lib/storage.js';
+import { classifyRoute } from '../lib/route-parser.js';
+import { getUnknownAirports, learnAirport } from '../lib/airport-db.js';
 import CalendarGrid from '../components/CalendarGrid.jsx';
 import DayModal from '../components/DayModal.jsx';
 
@@ -66,7 +68,94 @@ function fileToBase64(file) {
   });
 }
 
-// Date-aware rest calculation between two entries (handles multi-day layovers correctly)
+// ─── mobile format post-processing ───────────────────────────────────────────
+
+const DOW_MAP = { Mo:'Mon',Tu:'Tue',We:'Wed',Th:'Thu',Fr:'Fri',Sa:'Sat',Su:'Sun',
+                  Mon:'Mon',Tue:'Tue',Wed:'Wed',Thu:'Thu',Fri:'Fri',Sat:'Sat',Sun:'Sun' };
+
+function mobileEntryType(dutyCode) {
+  const u = (dutyCode || '').toUpperCase();
+  if (u.includes('RERRP2LD')) return 'RERRP2LD';
+  if (u.includes('RERRP36'))  return 'RERRP36';
+  if (u.startsWith('B-SB') || u.startsWith('SBA_') || u.startsWith('SBM_')) return 'STANDBY';
+  if (u.includes('DEMO'))     return 'DEMO';
+  if (u === 'ASI' || u.includes('GRT') || u.includes('GNDTNG')) return 'GROUND_TRAINING';
+  if (u.includes('SIM') || u.includes('FFS') || u.includes('RT3') ||
+      u.includes('LPC') || u.includes('CAE')) return 'SIM';
+  return 'FLIGHT';
+}
+
+function hhmm(str) {
+  if (!str) return 0;
+  const [h, m] = str.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function minsToHhmm(m) {
+  if (m < 0) m += 1440;
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
+
+function routeToSectors(route) {
+  const parts = (route || '').split('-').filter(p => p.length === 3);
+  if (parts.length < 2) return [];
+  return parts.slice(0, -1).map((o, i) => ({ origin: o, dest: parts[i + 1] }));
+}
+
+// Convert AI mobile entries into the same schema used by desktop roster entries.
+function postProcessMobileEntries(rawEntries) {
+  return rawEntries.map(e => {
+    const type  = mobileEntryType(e.dutyCode);
+    const route = (e.route || '').trim();
+    const parts = route.split('-').filter(Boolean);
+    const from  = parts[0] || null;
+    const to    = parts[parts.length - 1] || null;
+    const numLegs = Math.max(0, parts.length - 1);
+    const sectors = routeToSectors(route);
+
+    // Block time calculation (FLIGHT only)
+    let flightTime = null;
+    if (type === 'FLIGHT' && e.report && e.release) {
+      const relMins = hhmm(e.release) + (e.releaseNextDay ? 1440 : 0);
+      const repMins = hhmm(e.report);
+      const routeType = classifyRoute(route);
+      if (routeType === 'DOM') {
+        const block = relMins - repMins - 120;
+        flightTime = block > 0 ? minsToHhmm(block) : null;
+      }
+      // INTER: leave null — timezone complexity; user enters from HR email
+    }
+
+    return {
+      date:           e.date,
+      dow:            DOW_MAP[e.dow] || e.dow,
+      type,
+      dutyCode:       e.dutyCode || null,
+      property:       (type === 'RERRP36' || type === 'RERRP2LD') ? 'R' : null,
+      from,
+      to,
+      report:         e.report || null,
+      release:        e.release || null,
+      releaseNextDay: e.releaseNextDay || false,
+      scheduledBlock: flightTime,
+      flightTime,
+      dutyTime:       null,
+      tafb:           null,
+      restTime:       null,
+      sectors,
+      numLegs,
+      layover:        e.releaseNextDay || false,
+      nightDuty:      false,
+      earlyStart:     false,
+      lateFinish:     false,
+      woclEncroached: false,
+      comments:       [],
+      allowances:     '',
+    };
+  });
+}
+
+// ─── Date-aware rest calculation between two entries (handles multi-day layovers correctly)
 function computeRestMin(prevEntry, currEntry) {
   if (!prevEntry?.release || !currEntry?.report || !prevEntry?.date || !currEntry?.date) return null;
   try {
@@ -134,12 +223,16 @@ export default function ScheduleCalendar({
   entries, setEntries, totals, setTotals,
   crewProfile, setCrewProfile,
 }) {
-  const [selectedDay, setSelectedDay] = useState(null); // { entry, prevEntry, nextEntry }
-  const [isLoading,   setIsLoading]   = useState(false);
-  const [loadError,   setLoadError]   = useState(null);
-  const [isDragging,  setIsDragging]  = useState(false);
-  const [savedInfo,   setSavedInfo]   = useState(null); // { count, year, month } after successful parse
-  const fileInputRef = useRef(null);
+  const [selectedDay,    setSelectedDay]    = useState(null);
+  const [isLoading,      setIsLoading]      = useState(false);
+  const [loadError,      setLoadError]      = useState(null);
+  const [isDragging,     setIsDragging]     = useState(false);
+  const [savedInfo,      setSavedInfo]      = useState(null);
+  // Pending save — held until unknown airports are classified
+  const [pendingSave,    setPendingSave]    = useState(null); // { entries, totals, crew, targetYear, targetMonth }
+  const [unknownCodes,   setUnknownCodes]   = useState([]); // airports needing DOM/INTER classification
+  const fileInputRef     = useRef(null);
+  const mobileInputRef   = useRef(null);
 
   // Load stored roster when month/year changes
   useEffect(() => {
@@ -184,12 +277,9 @@ export default function ScheduleCalendar({
 
       if (!merged || !merged.entries) throw new Error('No entries found in roster image.');
 
-      const enriched = enrichEntries(merged.entries);
-
       // Determine target year/month.
-      // Strategy 1 (most reliable): find the month containing the most entries.
-      // Strategy 2 (fallback): parse the period END date (end is closer to the
-      //   work month — e.g. "25 Feb – 24 Mar" → March, not February).
+      // Strategy 1 (most reliable): dominant month by entry count.
+      // Strategy 2 (fallback): period END date.
       let targetYear  = year;
       let targetMonth = month;
 
@@ -207,32 +297,12 @@ export default function ScheduleCalendar({
         }
       }
 
-      setYear(targetYear);
-      setMonth(targetMonth);
-      setEntries(enriched);
-      setTotals(merged.totals || null);
-
-      if (merged.crew) {
-        setCrewProfile(merged.crew);
-        saveCrewProfile(merged.crew);
-      }
-
-      // Save raw entries (no _ftl* computed fields) under the correct month key.
-      // Defensive: if AI omitted flightTime (undefined → dropped by JSON.stringify),
-      // fall back to scheduledBlock so syncFromCalendar always has block minutes.
+      // Fall back to scheduledBlock if AI omitted flightTime.
       const rawEntries = merged.entries.map(e => ({
         ...e,
         flightTime: e.flightTime ?? e.scheduledBlock ?? null,
       }));
-      const firstFlight = rawEntries.find(e => e.type === 'FLIGHT');
-      console.log('[processFiles] first FLIGHT before save — flightTime:', firstFlight?.flightTime,
-        '| scheduledBlock:', firstFlight?.scheduledBlock, '| date:', firstFlight?.date);
-      saveRoster(targetYear, targetMonth, {
-        entries: rawEntries,
-        totals:  merged.totals,
-        crew:    merged.crew,
-      });
-      setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
+      finalizeRoster(rawEntries, merged.totals, merged.crew, targetYear, targetMonth);
 
     } catch (err) {
       setLoadError(err.message || 'Failed to analyze roster image.');
@@ -240,6 +310,76 @@ export default function ScheduleCalendar({
       setIsLoading(false);
     }
   }, [year, month]);
+
+  // ─── mobile list view processor ───────────────────────────────────────────
+
+  const processMobileFile = useCallback(async (file) => {
+    if (!file) return;
+    setIsLoading(true);
+    setLoadError(null);
+    setSavedInfo(null);
+    try {
+      const base64  = await fileToBase64(file);
+      const raw     = await analyzeMobileRoster(base64);
+      if (!raw || raw.length === 0) throw new Error('No entries found in mobile roster image.');
+      const entries = postProcessMobileEntries(raw);
+
+      const dominant = dominantMonth(entries);
+      const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
+      const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
+
+      finalizeRoster(entries, null, null, targetYear, targetMonth);
+    } catch (err) {
+      setLoadError(err.message || 'Failed to analyze mobile roster image.');
+    } finally {
+      setIsLoading(false);
+      if (mobileInputRef.current) mobileInputRef.current.value = '';
+    }
+  }, [year, month]);
+
+  // ─── finalizeRoster — check unknowns, then save ────────────────────────────
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
+    const unknowns = getUnknownAirports(routes);
+
+    if (unknowns.length > 0) {
+      // Hold everything until the user classifies the unknown airports
+      setPendingSave({ rawEntries, totals, crew, targetYear, targetMonth });
+      setUnknownCodes(unknowns);
+      return;
+    }
+    commitSave(rawEntries, totals, crew, targetYear, targetMonth);
+  }, []);
+
+  const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    const enriched = enrichEntries(rawEntries);
+    setYear(targetYear);
+    setMonth(targetMonth);
+    setEntries(enriched);
+    setTotals(totals || null);
+    if (crew) { setCrewProfile(crew); saveCrewProfile(crew); }
+    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew });
+    setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
+    setPendingSave(null);
+    setUnknownCodes([]);
+  }, []);
+
+  const handleClassifyAirport = useCallback((iata, type) => {
+    learnAirport(iata, type);
+    setUnknownCodes(prev => {
+      const remaining = prev.filter(c => c !== iata);
+      if (remaining.length === 0 && pendingSave) {
+        // All classified — commit the deferred save
+        commitSave(
+          pendingSave.rawEntries, pendingSave.totals, pendingSave.crew,
+          pendingSave.targetYear, pendingSave.targetMonth
+        );
+      }
+      return remaining;
+    });
+  }, [pendingSave, commitSave]);
 
   // ─── drag-and-drop ────────────────────────────────────────────────────────
 
@@ -342,22 +482,25 @@ export default function ScheduleCalendar({
             <button onClick={() => navigateMonth(1)}  className="w-7 h-7 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors">›</button>
           </div>
 
-          {/* Upload button */}
+          {/* Upload buttons */}
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
             className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            title="Upload Merlot desktop roster report image(s)"
           >
-            {isLoading ? 'Analyzing…' : 'Upload Merlot'}
+            {isLoading ? 'Analyzing…' : 'Desktop Roster'}
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={e => processFiles(e.target.files)}
-          />
+          <button
+            onClick={() => mobileInputRef.current?.click()}
+            disabled={isLoading}
+            className="text-sm px-3 py-1.5 rounded bg-violet-700 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            title="Upload Merlot mobile app Duties List screenshot"
+          >
+            {isLoading ? 'Analyzing…' : 'Mobile List'}
+          </button>
+          <input ref={fileInputRef}   type="file" accept="image/*" multiple className="hidden" onChange={e => processFiles(e.target.files)} />
+          <input ref={mobileInputRef} type="file" accept="image/*"          className="hidden" onChange={e => { if (e.target.files?.[0]) processMobileFile(e.target.files[0]); }} />
         </div>
       </div>
 
@@ -388,8 +531,37 @@ export default function ScheduleCalendar({
           </div>
         )}
 
+        {/* ── Unknown airports classification ───────────────────────────── */}
+        {unknownCodes.length > 0 && (
+          <div className="bg-amber-900/30 border border-amber-600/50 rounded-lg p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-300">
+              New airports found — classify each as domestic or international:
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {unknownCodes.map(iata => (
+                <div key={iata} className="flex items-center gap-2 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2">
+                  <span className="font-mono font-bold text-white">{iata}</span>
+                  <button
+                    onClick={() => handleClassifyAirport(iata, 'DOM')}
+                    className="text-xs px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
+                  >
+                    DOM
+                  </button>
+                  <button
+                    onClick={() => handleClassifyAirport(iata, 'INTER')}
+                    className="text-xs px-2 py-1 rounded bg-sky-700 hover:bg-sky-600 text-white transition-colors"
+                  >
+                    INTER
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-400">Roster will be saved after all airports are classified. Choices are remembered for future uploads.</p>
+          </div>
+        )}
+
         {/* ── Drop zone (shown when no roster loaded) ───────────────────── */}
-        {!hasRoster && !isLoading && (
+        {!hasRoster && !isLoading && unknownCodes.length === 0 && (
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
