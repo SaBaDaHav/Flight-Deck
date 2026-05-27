@@ -31,8 +31,14 @@ export default function PayBreakdown({ monthlyResult, rates, stats }) {
     );
   }
 
-  const payslip = buildPayslipLines(monthlyResult, rates);
+  const payslip = buildPayslipLines(monthlyResult);
   const { incomeLines, deductionLines, totalIncome, totalDeductions, netPay } = payslip;
+
+  // Extract block details for stats annotation
+  const inc = monthlyResult.income;
+  const domBlockTax   = inc?.domBlockTax   || 0;
+  const interBlockTax = inc?.interBlockTax || 0;
+  const interBlockNt  = inc?.interBlockNt  || 0;
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
@@ -43,10 +49,34 @@ export default function PayBreakdown({ monthlyResult, rates, stats }) {
       {/* Stats summary */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4 pb-4 border-b border-slate-700">
-          <Stat label="DOM block"   value={fmtMinutes(stats.totalDomMins)}   sub={`${(stats.totalDomMins / 60).toFixed(1)} hr`} />
-          <Stat label="INTER block" value={fmtMinutes(stats.totalInterMins)} sub={`${(stats.totalInterMins / 60).toFixed(1)} hr`} />
-          <Stat label="Legs"        value={stats.totalLegs}                   sub="landings" />
-          <Stat label="Duty days"   value={stats.totalDutyDays}               sub={`+${stats.simDays} SIM`} />
+          <Stat
+            label="DOM block"
+            value={fmtMinutes(stats.totalDomMins)}
+            sub={`${(stats.totalDomMins / 60).toFixed(1)} hr · 35/min Tax`}
+          />
+          <Stat
+            label="INTER block"
+            value={fmtMinutes(stats.totalInterMins)}
+            sub={`${(stats.totalInterMins / 60).toFixed(1)} hr · 26.53+8.47`}
+          />
+          <Stat label="Legs"       value={stats.totalLegs}      sub="landings" />
+          <Stat label="Duty days"  value={stats.totalDutyDays}  sub={`+${stats.simDays} SIM`} />
+        </div>
+      )}
+
+      {/* Block pay detail strip */}
+      {(domBlockTax > 0 || interBlockTax > 0 || interBlockNt > 0) && (
+        <div className="flex flex-wrap gap-3 text-xs text-slate-400 mb-3 pb-3 border-b border-slate-700/50">
+          <span>Block detail:</span>
+          {domBlockTax > 0 && (
+            <span>DOM Tax <span className="text-white font-mono">{fmtThb(domBlockTax)}</span></span>
+          )}
+          {interBlockTax > 0 && (
+            <span>INTER Tax <span className="text-white font-mono">{fmtThb(interBlockTax)}</span></span>
+          )}
+          {interBlockNt > 0 && (
+            <span>INTER NT <span className="text-amber-300/80 font-mono">{fmtThb(interBlockNt)}</span></span>
+          )}
         </div>
       )}
 

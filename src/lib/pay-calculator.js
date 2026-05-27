@@ -1,128 +1,145 @@
 import { DEFAULT_RATES } from '../constants/default-rates.js';
 
+// Safe rate accessor — falls back to DEFAULT_RATES when key missing (handles old stored rates)
+function r(rates, key) {
+  return rates[key] ?? DEFAULT_RATES[key];
+}
+
 // ─── Per-day pay ─────────────────────────────────────────────────────────────
-// day shape (from HR allowance sheet or roster):
-//   domMins      — DOM block minutes
-//   interMins    — INTER block minutes
-//   legs         — number of landing legs (takeoff→landing count)
-//   perDiem      — 'DOM' | 'INTER' | null
-//   isSim        — true if FFS simulator session
-//   isGround     — true if ground training (no block, no transport)
-//   simCount     — number of FFS sessions (usually 0 or 1)
-//   instSessions — number of instruction sessions for ค่าสอน income
-
+// day shape:
+//   domMins   — DOM block minutes (effective)
+//   interMins — INTER block minutes (effective)
+//   legs      — landing count
+//   perDiem   — 'DOM' | 'INTER' | null  ('INTER' = international departure day)
+//   isSim     — FFS simulator session (transport YES, ค่าสอน NO, deduction applies)
+//   isGround  — GROUND TRAINING INST day (transport YES, ค่าสอน YES, no block)
 export function calcDayPay(day, rates = DEFAULT_RATES) {
-  const {
-    transportPerDay,
-    sectorPerLeg,
-    perDiemDom,
-    perDiemInterUsd,
-    usdThb,
-  } = rates;
+  const domMins   = day.domMins   || 0;
+  const interMins = day.interMins || 0;
+  const legs      = day.legs      || 0;
+  const perDiem   = day.perDiem   || null;
+  const isSim     = day.isSim     || false;
+  const isGround  = day.isGround  || false;
 
-  // Use per-minute rates directly; fall back to hourly÷60 for old stored rates
-  const domRate   = rates.domBlockPerMin   ?? (rates.domBlockPerHr   / 60);
-  const interRate = rates.interBlockPerMin ?? (rates.interBlockPerHr / 60);
-
-  const domMins    = day.domMins    || 0;
-  const interMins  = day.interMins  || 0;
-  const legs       = day.legs       || 0;
-  const isSim      = day.isSim      || false;
-  const isGround   = day.isGround   || false;
-  const perDiem    = day.perDiem    || null;
-
-  // Transport: applies to flight days and SIM days — NOT ground training
-  const hasFlightOrSim = domMins > 0 || interMins > 0 || isSim;
-  const transport = (!isGround && hasFlightOrSim) ? transportPerDay : 0;
+  // Transport: all activity types qualify; INTER departure days are excluded
+  // (pilot receives per diem instead on those days)
+  const hasActivity = domMins > 0 || interMins > 0 || isSim || isGround;
+  const isInterDep  = perDiem === 'INTER';
+  const transport   = (hasActivity && !isInterDep) ? r(rates, 'transportRate') : 0;
 
   // Sector pay
-  const sector = legs * sectorPerLeg;
+  const sector = legs * r(rates, 'sectorRate');
 
-  // Block pay (per minute using confirmed rates)
-  const domBlock   = domMins   * domRate;
-  const interBlock = interMins * interRate;
+  // Block pay — DOM all taxable; INTER split 75.8% tax / 24.2% NT
+  const domBlockTax   = domMins   * r(rates, 'domBlockPerMin');
+  const interBlockTax = interMins * r(rates, 'interBlockTaxPerMin');
+  const interBlockNt  = interMins * r(rates, 'interBlockNtPerMin');
 
-  // Per diem
-  let perdiem = 0;
-  if (perDiem === 'DOM')   perdiem = perDiemDom;
-  if (perDiem === 'INTER') perdiem = perDiemInterUsd * usdThb;
+  // Per diem — INTER overnight only (DOM placement TBC, pilot uses otherIncome)
+  const perdiem = isInterDep
+    ? r(rates, 'perDiemInterUsd') * r(rates, 'usdThb')
+    : 0;
 
-  // Instruction income (ค่าสอน) — optional
-  const instIncome = (day.instSessions || 0) * (rates.instructionPerSession || 0);
+  // Instruction (ค่าสอน) — GROUND TRAINING days only, NOT SIM days
+  const instructionPerDay = r(rates, 'instructionRatePerHr') * r(rates, 'instructionHoursPerDay');
+  const kaonPay = isGround ? instructionPerDay : 0;
 
   return {
-    transport,   // non-taxable
-    sector,      // taxable
-    domBlock,    // non-taxable
-    interBlock,  // taxable
-    perdiem,     // taxable
-    instIncome,  // taxable
-    total: transport + sector + domBlock + interBlock + perdiem + instIncome,
+    transport,      // non-taxable
+    sector,         // taxable
+    domBlockTax,    // taxable (DOM block, 100%)
+    interBlockTax,  // taxable (INTER block taxable portion)
+    interBlockNt,   // non-taxable (INTER block NT portion)
+    perdiem,        // taxable
+    kaonPay,        // taxable (ค่าสอน, ground training only)
+    total: transport + sector + domBlockTax + interBlockTax + interBlockNt + perdiem + kaonPay,
   };
 }
 
 // ─── Monthly pay ─────────────────────────────────────────────────────────────
-// days: array of day objects (one per calendar day worked/attended)
-// rates: rate object (defaults to DEFAULT_RATES)
-// simCount: total FFS sessions in the month (for deduction)
+// days     — array of day objects (shape as above)
+// rates    — rate object (defaults to DEFAULT_RATES)
+// simCount — total FFS sessions in month (for SIM deduction)
 export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
-  const totals = {
-    transport:   0,
-    sector:      0,
-    domBlock:    0,
-    interBlock:  0,
-    perdiem:     0,
-    instIncome:  0,
-  };
+  let totalDomMins   = 0;
+  let totalInterMins = 0;
+  let totalLegs      = 0;
+  let flightDays     = 0;   // days with any block time
+  let gndTrgDays     = 0;   // GROUND TRAINING INST days
+  let interDepDays   = 0;   // INTER departure days (perDiem === 'INTER')
+  let interNights    = 0;   // same count as interDepDays
+  const simDays      = simCount;
 
   for (const day of days) {
-    const d = calcDayPay(day, rates);
-    totals.transport  += d.transport;
-    totals.sector     += d.sector;
-    totals.domBlock   += d.domBlock;
-    totals.interBlock += d.interBlock;
-    totals.perdiem    += d.perdiem;
-    totals.instIncome += d.instIncome;
+    const domMins   = day.domMins   || 0;
+    const interMins = day.interMins || 0;
+    totalDomMins   += domMins;
+    totalInterMins += interMins;
+    totalLegs      += day.legs || 0;
+    if (domMins > 0 || interMins > 0) flightDays++;
+    if (day.isGround) gndTrgDays++;
+    if (day.perDiem === 'INTER') { interDepDays++; interNights++; }
   }
 
-  // Fixed monthly income (Captain)
-  const fixed = {
-    baseSalary:       rates.baseSalary       || DEFAULT_RATES.baseSalary,
-    performanceAllow: rates.performanceAllow || DEFAULT_RATES.performanceAllow,
-    specialIncome:    rates.specialIncome    || DEFAULT_RATES.specialIncome,
-  };
+  // Transport: (flightDays + gndTrgDays + simDays − interDepDays) × rate
+  const transportDays = Math.max(0, flightDays + gndTrgDays + simDays - interDepDays);
+  const transport     = transportDays * r(rates, 'transportRate');
+
+  // Sector
+  const sector = totalLegs * r(rates, 'sectorRate');
+
+  // Block pay (DOM all taxable; INTER split)
+  const domBlockTax   = totalDomMins   * r(rates, 'domBlockPerMin');
+  const interBlockTax = totalInterMins * r(rates, 'interBlockTaxPerMin');
+  const interBlockNt  = totalInterMins * r(rates, 'interBlockNtPerMin');
+
+  // Per diem — INTER nights only (DOM 500/night TBC: pilot adds to otherIncome)
+  const perDiem = interNights * r(rates, 'perDiemInterUsd') * r(rates, 'usdThb');
+
+  // Instruction (ค่าสอน): GROUND TRAINING days × 10,080 (1,440/hr × 7hr)
+  const instructionPerDay = r(rates, 'instructionRatePerHr') * r(rates, 'instructionHoursPerDay');
+  const kaonPay           = gndTrgDays * instructionPerDay;
+
+  // Fixed
+  const baseSalary       = r(rates, 'baseSalary');
+  const performanceAllow = r(rates, 'performanceAllow');
+  const otherIncome      = r(rates, 'otherIncome');
 
   const totalIncome =
-    fixed.baseSalary +
-    fixed.performanceAllow +
-    fixed.specialIncome +
-    totals.transport +
-    totals.sector +
-    totals.domBlock +
-    totals.interBlock +
-    totals.perdiem +
-    totals.instIncome;
+    baseSalary + performanceAllow + sector + kaonPay + transport +
+    domBlockTax + interBlockTax + interBlockNt + perDiem + otherIncome;
 
   // Deductions
-  const deductions = {
-    socialSecurity:    rates.socialSecurity    || DEFAULT_RATES.socialSecurity,
-    simDeduction:      simCount * (rates.simTrainingDeduction || DEFAULT_RATES.simTrainingDeduction),
-    incomeTax:         0, // computed externally — TVJ withholds; left as 0 placeholder
-  };
+  const socialSecurity = r(rates, 'socialSecurity');
 
-  const totalDeductions =
-    deductions.socialSecurity +
-    deductions.simDeduction +
-    deductions.incomeTax;
+  // Auto-disable SIM deduction after trainingDeductionEnds (Nov 2026 payment)
+  const now = new Date();
+  const currentMonth  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const deductionEnds = r(rates, 'trainingDeductionEnds');
+  const simActive     = typeof deductionEnds === 'string' && currentMonth <= deductionEnds;
+  const simDeduction  = simActive ? simDays * r(rates, 'simTrainingDeduction') : 0;
+
+  const incomeTax       = 0; // TVJ withholds; shown from payslip — left as placeholder
+  const totalDeductions = socialSecurity + simDeduction + incomeTax;
 
   return {
     income: {
-      ...fixed,
-      ...totals,
+      baseSalary,
+      performanceAllow,
+      sector,
+      kaonPay,
+      transport,
+      domBlockTax,
+      interBlockTax,
+      interBlockNt,
+      perDiem,
+      otherIncome,
       totalIncome,
     },
     deductions: {
-      ...deductions,
+      socialSecurity,
+      simDeduction,
+      incomeTax,
       totalDeductions,
     },
     netPay: totalIncome - totalDeductions,
@@ -131,58 +148,56 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
 
 // ─── Payslip summary helpers ──────────────────────────────────────────────────
 
-// Format minutes as "H:MM" for display
 export function fmtMinutes(min) {
   const h = Math.floor(min / 60);
   const m = min % 60;
   return `${h}:${String(m).padStart(2, '0')}`;
 }
 
-// Format THB amount with commas and 2 decimal places
 export function fmtThb(amount) {
   return amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// Build a line-by-line payslip array matching the TVJ payslip layout
-export function buildPayslipLines(monthlyResult, rates = DEFAULT_RATES) {
-  const { income, deductions, netPay } = monthlyResult;
-  const inc = income;
-  const ded = deductions;
+// Build payslip lines matching TVJ e-Payslip layout (Section 8.7)
+// ค่าชม.บิน Tax  = DOM block (100% taxable) + INTER block taxable portion
+// ค่าชม.บิน NT   = INTER block non-taxable portion only
+export function buildPayslipLines(monthlyResult) {
+  const { income: i, deductions: d, netPay } = monthlyResult;
 
   return {
     incomeLines: [
-      { label: 'เงินเดือน',        labelEn: 'Base salary',           amount: inc.baseSalary,       taxable: true },
-      { label: 'ค่าเซกเตอร์',      labelEn: 'Sector pay',            amount: inc.sector,           taxable: true },
-      { label: 'ค่าสอน',           labelEn: 'Instruction pay',        amount: inc.instIncome,       taxable: true },
-      { label: 'ค่าผลงาน',         labelEn: 'Performance allowance',  amount: inc.performanceAllow, taxable: true },
-      { label: 'ค่ายานพาหนะ NT',   labelEn: 'Transport (non-tax)',    amount: inc.transport,        taxable: false },
-      { label: 'ค่าชม.บิน Tax',    labelEn: 'INTER block (taxable)',  amount: inc.interBlock,       taxable: true },
-      { label: 'ค่าพักข้ามคืน Tax', labelEn: 'Per diem (taxable)',   amount: inc.perdiem,          taxable: true },
-      { label: 'ค่าชม.บิน NT',     labelEn: 'DOM block (non-tax)',    amount: inc.domBlock,         taxable: false },
-      { label: 'เงินได้พิเศษ',     labelEn: 'Special income',         amount: inc.specialIncome,    taxable: true },
+      { label: 'เงินเดือน',         labelEn: 'Base salary',           amount: i.baseSalary,                    taxable: true  },
+      { label: 'ค่าเซกเตอร์',       labelEn: 'Sector pay',            amount: i.sector,                        taxable: true  },
+      { label: 'ค่าสอน',            labelEn: 'Instruction pay',        amount: i.kaonPay,                       taxable: true  },
+      { label: 'ค่าผลงาน',          labelEn: 'Performance allowance',  amount: i.performanceAllow,              taxable: true  },
+      { label: 'ค่ายานพาหนะ NT',    labelEn: 'Transport (non-tax)',    amount: i.transport,                     taxable: false },
+      { label: 'ค่าชม.บิน Tax',     labelEn: 'Block hrs Tax (DOM+INTER)',amount: i.domBlockTax + i.interBlockTax, taxable: true  },
+      { label: 'ค่าพักข้ามคืน Tax', labelEn: 'Per diem INTER (taxable)',amount: i.perDiem,                      taxable: true  },
+      { label: 'ค่าชม.บิน NT',      labelEn: 'Block hrs NT (INTER)',   amount: i.interBlockNt,                  taxable: false },
+      { label: 'เงินได้พิเศษ',      labelEn: 'Other/special income',   amount: i.otherIncome,                   taxable: true  },
     ],
     deductionLines: [
-      { label: 'ภาษี',             labelEn: 'Income tax',             amount: ded.incomeTax },
-      { label: 'ประกันสังคม',      labelEn: 'Social security',        amount: ded.socialSecurity },
-      { label: 'ค่าฝึกอบรม',       labelEn: 'SIM training fee',       amount: ded.simDeduction },
+      { label: 'ภาษี',              labelEn: 'Income tax',             amount: d.incomeTax },
+      { label: 'ประกันสังคม',       labelEn: 'Social security',        amount: d.socialSecurity },
+      { label: 'ค่าฝึกอบรม',        labelEn: 'SIM training fee',       amount: d.simDeduction },
     ],
-    totalIncome:     inc.totalIncome,
-    totalDeductions: ded.totalDeductions,
+    totalIncome:     i.totalIncome,
+    totalDeductions: d.totalDeductions,
     netPay,
   };
 }
 
-// ─── Discrepancy helpers for AllowanceChecker ────────────────────────────────
+// ─── Discrepancy helpers ──────────────────────────────────────────────────────
 
-// domScheduled/interScheduled = HR values; domActual/interActual = pilot values (minutes)
 export function calcDelta(scheduled, actual) {
   if (actual === null || actual === undefined) return 0;
   return actual - scheduled;
 }
 
+// Delta THB uses full 35/min rate for both DOM and INTER (tax + NT combined)
 export function deltaToThb(domDeltaMin, interDeltaMin, rates = DEFAULT_RATES) {
-  const domRate   = rates.domBlockPerMin   ?? ((rates.domBlockPerHr   ?? 681)  / 60);
-  const interRate = rates.interBlockPerMin ?? ((rates.interBlockPerHr ?? 3160) / 60);
+  const domRate   = r(rates, 'domBlockPerMin');
+  const interRate = r(rates, 'interBlockTaxPerMin') + r(rates, 'interBlockNtPerMin');
   const dom   = (domDeltaMin   || 0) * domRate;
   const inter = (interDeltaMin || 0) * interRate;
   return { dom, inter, total: dom + inter };

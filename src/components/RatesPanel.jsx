@@ -6,29 +6,30 @@ const GROUPS = [
   {
     title: 'Variable Pay (flight-dependent)',
     fields: [
-      { key: 'transportPerDay',    label: 'Transport / duty day',   unit: 'THB',      hint: 'Non-taxable' },
-      { key: 'sectorPerLeg',       label: 'Sector pay / landing',   unit: 'THB',      hint: 'Taxable' },
-      { key: 'domBlockPerMin',      label: 'DOM block / min',        unit: 'THB/min',  hint: 'Non-taxable (confirmed 11.34)' },
-      { key: 'interBlockPerMin',   label: 'INTER block / min',      unit: 'THB/min',  hint: 'Taxable (confirmed 52.67)' },
-      { key: 'perDiemDom',         label: 'Per diem DOM / night',   unit: 'THB',      hint: 'Taxable' },
-      { key: 'perDiemInterUsd',    label: 'Per diem INTER / night', unit: 'USD',      hint: 'Taxable · converted at exchange rate' },
-      { key: 'usdThb',             label: 'USD / THB rate',         unit: 'THB/USD',  hint: 'Edit monthly' },
+      { key: 'transportRate',        label: 'Transport / qualifying day',   unit: 'THB',     hint: 'Non-tax · flight + SIM + gndTrg − INTER dep days' },
+      { key: 'sectorRate',           label: 'Sector pay / landing',         unit: 'THB',     hint: 'Taxable' },
+      { key: 'domBlockPerMin',       label: 'DOM block / min',              unit: 'THB/min', hint: 'Taxable 100% (confirmed 35.00)' },
+      { key: 'interBlockTaxPerMin',  label: 'INTER block Tax / min',        unit: 'THB/min', hint: 'Taxable 75.8% (confirmed 26.53)' },
+      { key: 'interBlockNtPerMin',   label: 'INTER block NT / min',         unit: 'THB/min', hint: 'Non-tax 24.2% (confirmed 8.47) · tax+NT = 35.00' },
+      { key: 'perDiemInterUsd',      label: 'Per diem INTER / night',       unit: 'USD',     hint: 'Taxable · converted at rate below' },
+      { key: 'usdThb',               label: 'USD / THB rate',               unit: 'THB/USD', hint: 'Edit monthly (Mar 2026 = 35.55)' },
     ],
   },
   {
     title: 'Fixed Monthly (Captain)',
     fields: [
-      { key: 'baseSalary',         label: 'Base salary',            unit: 'THB',      hint: 'Taxable' },
-      { key: 'performanceAllow',   label: 'Performance allowance',  unit: 'THB',      hint: 'Taxable' },
-      { key: 'specialIncome',      label: 'Special income',         unit: 'THB',      hint: 'Taxable' },
-      { key: 'socialSecurity',     label: 'Social security',        unit: 'THB',      hint: 'Deduction' },
+      { key: 'baseSalary',         label: 'Base salary',              unit: 'THB',   hint: 'Taxable — every month' },
+      { key: 'performanceAllow',   label: 'Performance allowance',    unit: 'THB',   hint: 'Taxable — every month' },
+      { key: 'otherIncome',        label: 'Other / special income',   unit: 'THB',   hint: 'Taxable · set each month: special income, DOM per diem, carryover' },
+      { key: 'socialSecurity',     label: 'Social security',          unit: 'THB',   hint: 'Deduction — always 875' },
     ],
   },
   {
     title: 'Special Events',
     fields: [
-      { key: 'instructionPerSession', label: 'Instruction / session', unit: 'THB', hint: 'Income (ค่าสอน)' },
-      { key: 'simTrainingDeduction',  label: 'SIM FFS / session',     unit: 'THB', hint: 'Deduction (ค่าฝึกอบรม)' },
+      { key: 'instructionRatePerHr',   label: 'Instruction rate / hr',        unit: 'THB/hr', hint: 'ค่าสอน · GROUND TRAINING days only (1,440 × 7hr = 10,080/day)' },
+      { key: 'instructionHoursPerDay', label: 'Instruction hours / day',      unit: 'hours',  hint: 'Teaching hours per GROUND TRAINING day (default 7)' },
+      { key: 'simTrainingDeduction',   label: 'SIM FFS deduction / session',  unit: 'THB',    hint: 'ค่าฝึกอบรม · auto-stops after Nov 2026 payment month' },
     ],
   },
 ];
@@ -99,6 +100,11 @@ export default function RatesPanel({ rates, onRatesChange }) {
           </div>
         ))}
       </div>
+
+      <p className="mt-4 text-xs text-slate-500">
+        Note: DOM per diem (THB 500/night) placement is TBC — include in "Other/special income" until confirmed.
+        SIM deduction auto-disables after Nov 2026 payment regardless of this setting.
+      </p>
     </div>
   );
 }
