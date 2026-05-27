@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { analyzeRosterImage, mergeRosterResults, analyzeMobileRoster } from '../lib/anthropic.js';
 import { analyzeEntry, getMinRest } from '../lib/ftl-rules.js';
-import { loadRoster, saveRoster, saveCrewProfile, loadCrewProfile } from '../lib/storage.js';
-import { classifyRoute } from '../lib/route-parser.js';
+import { loadRoster, saveRoster, saveCrewProfile, loadCrewProfile, loadLearnedRoutes, saveLearnedRoute } from '../lib/storage.js';
 import { getUnknownAirports, learnAirport } from '../lib/airport-db.js';
+import { calcTotalBlockMinsWithLearned, findMissingLegs } from '../constants/route-block-times.js';
 import CalendarGrid from '../components/CalendarGrid.jsx';
 import DayModal from '../components/DayModal.jsx';
 
@@ -104,7 +104,7 @@ function routeToSectors(route) {
 
 // Convert AI mobile entries into the same schema used by desktop roster entries.
 // selectedYear: force all parsed dates to this year (fixes AI defaulting to wrong year).
-function postProcessMobileEntries(rawEntries, selectedYear) {
+function postProcessMobileEntries(rawEntries, selectedYear, learnedRoutes = {}) {
   const yearToUse = selectedYear || new Date().getFullYear();
   return rawEntries.map(e => {
     // Correct year if AI returned wrong year (e.g. 2025 or 2020 instead of 2026)
@@ -124,17 +124,15 @@ function postProcessMobileEntries(rawEntries, selectedYear) {
     const numLegs = Math.max(0, parts.length - 1);
     const sectors = routeToSectors(route);
 
-    // Block time calculation (FLIGHT only)
+    // Block time — look up from TVJ route DB (static) or user-learned routes
     let flightTime = null;
-    if (type === 'FLIGHT' && e.report && e.release) {
-      const relMins = hhmm(e.release) + (e.releaseNextDay ? 1440 : 0);
-      const repMins = hhmm(e.report);
-      const routeType = classifyRoute(route);
-      if (routeType === 'DOM') {
-        const block = relMins - repMins - 120;
-        flightTime = block > 0 ? minsToHhmm(block) : null;
+    let blockMins  = null;
+    if (type === 'FLIGHT') {
+      const dbMins = calcTotalBlockMinsWithLearned(route, learnedRoutes);
+      if (dbMins != null) {
+        blockMins  = dbMins;
+        flightTime = minsToHhmm(dbMins);
       }
-      // INTER: leave null — timezone complexity; user enters from HR email
     }
 
     return {
@@ -150,6 +148,7 @@ function postProcessMobileEntries(rawEntries, selectedYear) {
       releaseNextDay: e.releaseNextDay || false,
       scheduledBlock: flightTime,
       flightTime,
+      blockMins,
       dutyTime:       null,
       tafb:           null,
       restTime:       null,
@@ -241,7 +240,10 @@ export default function ScheduleCalendar({
   const [savedInfo,      setSavedInfo]      = useState(null);
   // Pending save — held until unknown airports are classified
   const [pendingSave,    setPendingSave]    = useState(null); // { entries, totals, crew, targetYear, targetMonth }
-  const [unknownCodes,   setUnknownCodes]   = useState([]); // airports needing DOM/INTER classification
+  const [unknownCodes,     setUnknownCodes]     = useState([]); // airports needing DOM/INTER classification
+  const [unknownRouteLegs, setUnknownRouteLegs] = useState([]); // route legs needing block-time input
+  const [pendingRouteSave, setPendingRouteSave] = useState(null); // { allRaw, year, targetYear, targetMonth }
+  const [routeInputs,      setRouteInputs]      = useState({}); // { 'PKX-BKK': '285' }
   const fileInputRef     = useRef(null);
   const mobileInputRef   = useRef(null);
 
@@ -336,11 +338,26 @@ export default function ScheduleCalendar({
       const rawArrays = await Promise.all(base64s.map(b64 => analyzeMobileRoster(b64, year)));
       const allRaw    = rawArrays.flat();
       if (!allRaw || allRaw.length === 0) throw new Error('No entries found in mobile roster image.');
-      const entries   = postProcessMobileEntries(allRaw, year);
+      const learnedRoutes = loadLearnedRoutes();
+      const entries   = postProcessMobileEntries(allRaw, year, learnedRoutes);
 
       const dominant    = dominantMonth(entries);
       const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
       const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
+
+      // Collect FLIGHT legs missing from both route DB and learned routes
+      const missingLegs = new Set();
+      for (const e of entries) {
+        if (e.type === 'FLIGHT' && e.blockMins === null && e.route) {
+          for (const leg of findMissingLegs(e.route, learnedRoutes)) missingLegs.add(leg);
+        }
+      }
+      if (missingLegs.size > 0) {
+        setPendingRouteSave({ allRaw, year, targetYear, targetMonth });
+        setUnknownRouteLegs([...missingLegs]);
+        setRouteInputs({});
+        return;
+      }
 
       finalizeRoster(entries, null, null, targetYear, targetMonth);
     } catch (err) {
@@ -401,6 +418,20 @@ export default function ScheduleCalendar({
       return remaining;
     });
   }, [pendingSave, commitSave]);
+
+  const handleSaveLearnedRoutes = useCallback(() => {
+    for (const [legKey, mins] of Object.entries(routeInputs)) {
+      if (mins) saveLearnedRoute(legKey, Number(mins));
+    }
+    if (pendingRouteSave) {
+      const learned   = loadLearnedRoutes();
+      const processed = postProcessMobileEntries(pendingRouteSave.allRaw, pendingRouteSave.year, learned);
+      finalizeRoster(processed, null, null, pendingRouteSave.targetYear, pendingRouteSave.targetMonth);
+      setPendingRouteSave(null);
+    }
+    setUnknownRouteLegs([]);
+    setRouteInputs({});
+  }, [pendingRouteSave, routeInputs, finalizeRoster]);
 
   // ─── drag-and-drop ────────────────────────────────────────────────────────
 
@@ -548,6 +579,41 @@ export default function ScheduleCalendar({
               {!import.meta.env.VITE_ANTHROPIC_API_KEY && (
                 <p className="text-xs text-amber-300 mt-1">Set VITE_ANTHROPIC_API_KEY in .env.local to enable AI parsing.</p>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Unknown route block times ─────────────────────────────────── */}
+        {unknownRouteLegs.length > 0 && (
+          <div className="bg-amber-900/30 border border-amber-600/50 rounded-lg p-4 space-y-3">
+            <p className="text-sm font-semibold text-amber-300">
+              Unknown routes — enter block minutes for each leg:
+            </p>
+            <div className="flex flex-wrap gap-3">
+              {unknownRouteLegs.map(legKey => (
+                <div key={legKey} className="flex items-center gap-2 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2">
+                  <span className="font-mono font-bold text-white text-sm">{legKey}</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={routeInputs[legKey] || ''}
+                    onChange={e => setRouteInputs(prev => ({ ...prev, [legKey]: e.target.value }))}
+                    placeholder="e.g. 285"
+                    className="w-20 bg-slate-700 border border-slate-500 focus:border-sky-400 focus:outline-none rounded px-2 py-1 text-sm text-white font-mono"
+                  />
+                  <span className="text-xs text-slate-400">min</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSaveLearnedRoutes}
+                disabled={!unknownRouteLegs.every(k => routeInputs[k])}
+                className="text-sm px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+              >
+                Save &amp; Continue
+              </button>
+              <p className="text-xs text-slate-400">Block times saved for future uploads.</p>
             </div>
           </div>
         )}

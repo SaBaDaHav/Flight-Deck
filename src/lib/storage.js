@@ -83,6 +83,17 @@ export function saveCrewProfile(profile) {
   return save(key('crew-profile'), profile);
 }
 
+// ─── Learned route block times ────────────────────────────────────────────────
+// Stored as { 'PKX-BKK': 285, 'NRT-BKK': 455, ... } (number values = minutes)
+export function loadLearnedRoutes() {
+  return load(key('learned-routes')) || {};
+}
+
+export function saveLearnedRoute(legKey, mins) {
+  const existing = loadLearnedRoutes();
+  return save(key('learned-routes'), { ...existing, [legKey]: mins });
+}
+
 // ─── Export / import (for Phase 1→2 migration) ────────────────────────────────
 export function exportAll() {
   const data = {};

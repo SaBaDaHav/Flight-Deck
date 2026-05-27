@@ -62,14 +62,6 @@ function rowDiscrepancy(row) {
   return totalAbsDelta <= 15 ? 'minor' : 'major';
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 // ─── calendar sync helpers ───────────────────────────────────────────────────
 
@@ -443,8 +435,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       let domActual   = '';
       let interActual = '';
       if (!isOff && !isSim && !isGround && !isTraining) {
-        const blockStr  = entry.flightTime || entry.scheduledBlock || '';
-        const totalMins = parseHhmmToMin(blockStr);
+        const totalMins = entry.blockMins != null
+          ? entry.blockMins
+          : parseHhmmToMin(entry.flightTime || entry.scheduledBlock || '');
         if (totalMins > 0) {
           const classRoute = entry.sectors?.length > 0
             ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
@@ -453,7 +446,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           domActual   = domMins   > 0 ? domMins   : '';
           interActual = interMins > 0 ? interMins : '';
           console.log(
-            `[Sync D${row.date}] block="${blockStr}"→${totalMins}min route="${classRoute}"`,
+            `[Sync D${row.date}] block=${entry.blockMins != null ? `${entry.blockMins}min(DB)` : `"${entry.flightTime || entry.scheduledBlock || ''}"`}→${totalMins}min route="${classRoute}"`,
             `DOM:${domMins} INT:${interMins}`
           );
         } else {
