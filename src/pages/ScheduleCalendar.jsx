@@ -15,6 +15,11 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ];
 
+// Reject totals rows / malformed AI output — every real entry must have YYYY-MM-DD
+function isValidDate(d) {
+  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+}
+
 function parseHhmm(str) {
   if (!str) return 0;
   const [h, m] = str.split(':').map(Number);
@@ -254,7 +259,11 @@ export default function ScheduleCalendar({
     const stored = loadRoster(year, month);
     if (stored) {
       const learnedRoutes = loadLearnedRoutes();
-      const backfilled = (stored.entries || []).map(e => {
+      const rawStored = (stored.entries || []).filter(e => isValidDate(e.date));
+      console.log('[LoadRoster] valid entries:', rawStored.length,
+        '| FLIGHT entries:', rawStored.filter(e => e.type === 'FLIGHT').length,
+        '| sample:', rawStored.find(e => e.type === 'FLIGHT'));
+      const backfilled = rawStored.map(e => {
         if (e.type !== 'FLIGHT' || e.blockMins != null) return e;
         let route = null;
         if (e.sectors?.length > 0) {
@@ -265,6 +274,9 @@ export default function ScheduleCalendar({
         const mins = route ? calcTotalBlockMinsWithLearned(route, learnedRoutes) : null;
         return mins != null ? { ...e, blockMins: mins } : e;
       });
+      const flightEntries = backfilled.filter(e => e.type === 'FLIGHT');
+      console.log('[LoadRoster] after backfill FLIGHT blockMins:',
+        flightEntries.map(e => `${e.date}=${e.blockMins ?? 'null('+e.flightTime+')'}`));
       setEntries(enrichEntries(backfilled));
       setTotals(stored.totals || null);
     } else {
@@ -324,10 +336,11 @@ export default function ScheduleCalendar({
         }
       }
 
-      // Backfill blockMins from route DB (authoritative block time) for all FLIGHT entries.
-      // Desktop AI extracts flightTime from Merlot column but may return null; route DB is reliable.
+      // Strip totals/summary rows (no valid date) then backfill blockMins from route DB.
+      // Desktop AI sometimes includes the Merlot footer totals row as an entry with
+      // flightTime="100:10" (full-period total) — the date filter removes it.
       const learnedRoutes = loadLearnedRoutes();
-      const rawEntries = merged.entries.map(e => {
+      const rawEntries = merged.entries.filter(e => isValidDate(e.date)).map(e => {
         let blockMins = e.blockMins ?? null;
         if (!blockMins && e.type === 'FLIGHT') {
           let route = null;
@@ -564,9 +577,13 @@ export default function ScheduleCalendar({
   // ─── computed stats ───────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
-    const flights   = entries.filter(e => e.type === 'FLIGHT');
-    const rerrp2ld  = entries.filter(e => e.type === 'RERRP2LD').length;
-    const rerrp36   = entries.filter(e => e.type === 'RERRP36').length;
+    // Only count entries that belong to the currently displayed calendar month.
+    // Merlot periods span ~4 weeks and may include days from the prior month;
+    // without this filter the totals reflect the full roster period, not the month.
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
+    const flights   = entries.filter(e => e.type === 'FLIGHT' && e.date?.startsWith(monthPrefix));
+    const rerrp2ld  = entries.filter(e => e.type === 'RERRP2LD' && e.date?.startsWith(monthPrefix)).length;
+    const rerrp36   = entries.filter(e => e.type === 'RERRP36' && e.date?.startsWith(monthPrefix)).length;
     const violations = flights.filter(e => e._ftlViolation).length;
     const warnings   = flights.filter(e => e._ftlWarning).length;
     const nightDuties = flights.filter(e => e.nightDuty).length;
@@ -583,6 +600,7 @@ export default function ScheduleCalendar({
       tafbMins   += parseHhmm(e.tafb);
     }
 
+    console.log('[Stats] flightMins total:', flightMins, '=', fmtMin(flightMins), '| entries:', flights.length);
     // Use per-entry sum exclusively. Never fall back to totals.flightTime:
     // the Merlot footer covers the full roster period (may span multiple calendar months)
     // and mergeRosterResults sums both images — making it unreliable for a single calendar month.
@@ -611,7 +629,7 @@ export default function ScheduleCalendar({
       totalFlightMins, totalDutyMins, tafbMins,
       violatedEntries,
     };
-  }, [entries, totals]);
+  }, [entries, totals, year, month]);
 
   const hasRoster = entries.length > 0;
   const hasViolations = stats.violations > 0;
