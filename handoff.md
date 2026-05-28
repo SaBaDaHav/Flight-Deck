@@ -19,7 +19,7 @@ Full brief: CLAUDE.md in project root (gitignored)
 4. Payment month passed to calcMonthlyPay — deduction checks payment month not today
 5. DOM per diem 500 THB — now included in perDiem total
 6. INTER block classification — route field fallback for mobile entries
-7. ESLint — 0 errors 0 warnings
+7. ESLint — 0 errors 0 warnings maintained throughout
 8. March 2026 validated — 406,561 THB exact
 9. Mobile duplicate entries — deduplicate by date (overlapping screenshots)
 10. Missing legs detection — uses sectors/from/to not e.route
@@ -29,6 +29,8 @@ Full brief: CLAUDE.md in project root (gitignored)
 14. Debug console.log removed from all files
 15. Work month → Payment month label added to PayBreakdown
 16. Swap/Giveaway FTL Checker — upload friend's screenshot, auto-detects multi-day swap chain from BKK homebase, full month FTL re-analysis, pay delta calculation
+17. Actual block time entry — per-leg off-block/on-block in EditEntryModal, auto-sums to total, FTL tracking only, not used for pay
+18. RosterAnalyser cumulative bars use actualBlockMins → blockMins → scheduledBlock priority chain
 
 ---
 
@@ -49,11 +51,26 @@ Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip when available (
 
 ---
 
+## Actual Block Time Tracking
+- Enter via Calendar tab → click flight cell → Edit duty → Actual block time section
+- Per-leg entry: each sector shows own off-block/on-block fields (e.g. 4-sector day = 4 leg rows)
+- Legs auto-populated from entry sectors; route change rebuilds leg list preserving existing times
+- Each leg shows individual block time; total auto-sums all legs
+- Used ONLY for FTL cumulative tracking in Roster Analyser tab
+- Never affects pay calculation (pay always uses blockMins from route DB)
+- RosterAnalyser footer shows "✏ N actual block entries" when real data present
+- Priority chain: actualBlockMins → blockMins (route DB) → scheduledBlock (Merlot)
+
+---
+
 ## Swap Checker Notes
+- Located in Roster Analyser tab → scroll to bottom
+- Upload friend's Merlot mobile screenshot
+- Auto-detects multi-day swap chain: finds your BKK departure, follows until return to BKK
+- Loads correct month roster even if their flights are in different month than currently viewed
+- Shows: FTL legal/illegal + full month re-analysis + pay breakdown (give away vs take)
 - Homebase = BKK (hardcoded in detectMySwapFlights)
-- Auto-detects which of your flights to give away by following BKK departure chain
-- Loads correct month roster even if their flights are in a different month than currently viewed
-- FTL violation on TKIX-1 (Jun 1, 00:25L report) is real — 1700-0459 band, 11:00 limit, 11:30 used
+- TKIX-1 Jun 1 00:25L report violates FTL (1700-0459 band, 11:00 limit, 11:30 used) — correctly detected
 
 ---
 
