@@ -1,12 +1,16 @@
-import { useState, useMemo } from 'react';
-import { loadRoster } from '../lib/storage.js';
+import { useState, useMemo, useRef } from 'react';
+import { loadRoster, loadLearnedRoutes } from '../lib/storage.js';
 import {
   analyzeEntry,
   getMinRest,
   CUMULATIVE_LIMITS,
   rerrpGapHours,
   countDisruptiveBetween,
+  getFdpLimit,
 } from '../lib/ftl-rules.js';
+import { analyzeSwapFlight } from '../lib/anthropic.js';
+import { calcTotalBlockMinsWithLearned } from '../constants/route-block-times.js';
+import { isInternational } from '../lib/airport-db.js';
 import { FtlBar } from '../components/FTLBars.jsx';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -194,6 +198,10 @@ export default function RosterAnalyser() {
   const now = new Date();
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
+  const [swapFlights,  setSwapFlights]  = useState([]);
+  const [swapLoading,  setSwapLoading]  = useState(false);
+  const [swapError,    setSwapError]    = useState(null);
+  const swapInputRef = useRef(null);
 
   const rosterData = useMemo(() => loadRoster(year, month), [year, month]);
 
@@ -238,6 +246,40 @@ export default function RosterAnalyser() {
       monthFlight:  enriched.reduce((a, e) => a + (e._flightMin || 0), 0),
     };
   }, [enriched]);
+
+  function calcFlightPay(route, numLegs) {
+    const learnedRoutes = loadLearnedRoutes();
+    const blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes) || 0;
+    const inter = isInternational(route);
+    const sectorPay = numLegs * 840;
+    const blockPay = inter
+      ? blockMins * 26.53 + blockMins * 8.47
+      : blockMins * 35;
+    return { blockMins, inter, sectorPay, blockPay, total: sectorPay + blockPay };
+  }
+
+  async function handleSwapUpload(files) {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setSwapLoading(true);
+    setSwapError(null);
+    setSwapFlights([]);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const flights = await analyzeSwapFlight(base64, year);
+      setSwapFlights(flights);
+    } catch (err) {
+      setSwapError(err.message || 'Failed to analyze swap image.');
+    } finally {
+      setSwapLoading(false);
+      if (swapInputRef.current) swapInputRef.current.value = '';
+    }
+  }
 
   function prevMonth() {
     if (month === 1) { setMonth(12); setYear(y => y - 1); }
@@ -429,6 +471,180 @@ export default function RosterAnalyser() {
             )}
           </>
         )}
+        {/* ── Swap / Giveaway FTL Checker ──────────────────────────── */}
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+            Swap / Giveaway FTL Checker
+          </p>
+
+          {/* Upload button */}
+          <div
+            onClick={() => swapInputRef.current?.click()}
+            className="flex items-center gap-3 bg-slate-800/60 border border-slate-700/40 border-dashed rounded-xl px-4 py-4 cursor-pointer hover:border-sky-600 transition-colors"
+          >
+            <span className="text-2xl">📸</span>
+            <div>
+              <p className="text-sm text-slate-200 font-semibold">Upload friend's flight screenshot</p>
+              <p className="text-xs text-slate-500">Merlot mobile screenshot — checks FTL + pay difference</p>
+            </div>
+            {swapLoading && (
+              <div className="ml-auto w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+            )}
+          </div>
+          <input
+            ref={swapInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={e => handleSwapUpload(e.target.files)}
+          />
+
+          {swapError && (
+            <p className="text-xs text-red-400 mt-2">{swapError}</p>
+          )}
+
+          {/* Results */}
+          {swapFlights.length > 0 && (
+            <div className="mt-3 space-y-3">
+              {swapFlights.map((flight, idx) => {
+                // FTL check — find prev and next entries around this flight date
+                const sorted = [...enriched].sort((a, b) => a.date.localeCompare(b.date));
+                const prevEntry = [...sorted].reverse().find(e =>
+                  e.date < flight.date && (e.type === 'FLIGHT' || e.type === 'STANDBY') && e.release
+                );
+                const nextEntry = sorted.find(e =>
+                  e.date > flight.date && (e.type === 'FLIGHT' || e.type === 'STANDBY') && e.report
+                );
+
+                // Rest before check
+                let restBefore = null;
+                if (prevEntry) {
+                  try {
+                    const rel = new Date(`${prevEntry.date}T${prevEntry.release}:00`);
+                    if (prevEntry.releaseNextDay) rel.setDate(rel.getDate() + 1);
+                    const rep = new Date(`${flight.date}T${flight.report}:00`);
+                    restBefore = Math.round((rep - rel) / 60000);
+                  } catch { restBefore = null; }
+                }
+
+                // Rest after check
+                let restAfter = null;
+                if (nextEntry) {
+                  try {
+                    const rel = new Date(`${flight.date}T${flight.release}:00`);
+                    if (flight.releaseNextDay) rel.setDate(rel.getDate() + 1);
+                    const rep = new Date(`${nextEntry.date}T${nextEntry.report}:00`);
+                    restAfter = Math.round((rep - rel) / 60000);
+                  } catch { restAfter = null; }
+                }
+
+                // FDP check
+                const fdpLimit = getFdpLimit(flight.report, flight.numLegs || 1);
+                const fdpUsed  = (() => {
+                  try {
+                    const rep = new Date(`${flight.date}T${flight.report}:00`);
+                    const rel = new Date(`${flight.date}T${flight.release}:00`);
+                    if (flight.releaseNextDay) rel.setDate(rel.getDate() + 1);
+                    return Math.round((rel - rep) / 60000);
+                  } catch { return null; }
+                })();
+
+                const minRestBefore = prevEntry ? Math.max(prevEntry.layover ? 600 : 720, 0) : 720;
+                const minRestAfter  = 720; // home base minimum
+
+                const restBeforeOk = restBefore === null || restBefore >= minRestBefore;
+                const restAfterOk  = restAfter  === null || restAfter  >= minRestAfter;
+                const fdpOk        = !fdpLimit  || !fdpUsed || fdpUsed <= fdpLimit;
+                const overall      = restBeforeOk && restAfterOk && fdpOk ? 'ok' : 'violation';
+
+                // Pay comparison
+                const theirPay = calcFlightPay(flight.route, flight.numLegs || 1);
+
+                // Find MY flight on same date if it exists (swap scenario)
+                const myFlight = enriched.find(e => e.date === flight.date && e.type === 'FLIGHT');
+                const myRoute  = myFlight
+                  ? (myFlight.sectors?.length > 0
+                      ? [myFlight.sectors[0].origin, ...myFlight.sectors.map(s => s.dest)].join('-')
+                      : `${myFlight.from}-${myFlight.to}`)
+                  : null;
+                const myPay = myRoute ? calcFlightPay(myRoute, myFlight.numLegs || 1) : null;
+                const payDelta = myPay ? theirPay.total - myPay.total : null;
+
+                const fmtThb = n => Math.round(n).toLocaleString('th-TH');
+
+                return (
+                  <div key={idx} className={`rounded-xl border p-4 space-y-3 ${
+                    overall === 'ok' ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-red-950/30 border-red-700/50'
+                  }`}>
+                    {/* Header */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-lg">{overall === 'ok' ? '✅' : '⛔'}</span>
+                      <span className="font-semibold text-white text-sm">{flight.dutyCode}</span>
+                      <span className="text-sky-300 font-mono text-sm">{flight.route}</span>
+                      <span className="text-slate-400 text-xs ml-auto">{flight.date} {flight.report}L</span>
+                    </div>
+
+                    {/* FTL bars */}
+                    <div className="space-y-2">
+                      {fdpUsed && fdpLimit && (
+                        <FtlBar
+                          label={`FDP (${flight.numLegs || 1} leg${(flight.numLegs||1)!==1?'s':''})`}
+                          usedMin={fdpUsed}
+                          limitMin={fdpLimit}
+                          status={fdpOk ? 'ok' : 'violation'}
+                        />
+                      )}
+                      {restBefore !== null && (
+                        <FtlBar
+                          label={`Rest before (prev: ${prevEntry?.date || '—'})`}
+                          usedMin={restBefore}
+                          limitMin={minRestBefore}
+                          status={restBeforeOk ? 'ok' : 'violation'}
+                        />
+                      )}
+                      {restAfter !== null && (
+                        <FtlBar
+                          label={`Rest after (next: ${nextEntry?.date || '—'})`}
+                          usedMin={restAfter}
+                          limitMin={minRestAfter}
+                          status={restAfterOk ? 'ok' : 'violation'}
+                        />
+                      )}
+                    </div>
+
+                    {/* Pay comparison */}
+                    <div className="bg-slate-800/60 rounded-lg px-3 py-2 space-y-1.5 text-xs font-mono">
+                      <p className="text-slate-400 font-sans font-semibold text-xs uppercase tracking-wide">Pay comparison</p>
+                      {myPay && (
+                        <div className="flex justify-between text-slate-400">
+                          <span>My flight ({myRoute})</span>
+                          <span>{fmtThb(myPay.total)} THB</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-slate-200">
+                        <span>Their flight ({flight.route}) {theirPay.blockMins}min {theirPay.inter ? 'INTER' : 'DOM'}</span>
+                        <span>{fmtThb(theirPay.total)} THB</span>
+                      </div>
+                      {payDelta !== null && (
+                        <div className={`flex justify-between font-bold border-t border-slate-700 pt-1.5 ${payDelta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          <span>{payDelta >= 0 ? '▲ You gain' : '▼ You lose'}</span>
+                          <span>{payDelta >= 0 ? '+' : ''}{fmtThb(payDelta)} THB</span>
+                        </div>
+                      )}
+                      {!myPay && (
+                        <div className="flex justify-between text-emerald-300 border-t border-slate-700 pt-1.5">
+                          <span>Giveaway — you earn</span>
+                          <span>+{fmtThb(theirPay.total)} THB</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   );
