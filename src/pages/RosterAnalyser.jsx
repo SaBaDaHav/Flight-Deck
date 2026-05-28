@@ -71,10 +71,13 @@ function enrichEntries(entries) {
       _ftlWarning:      ftl.fdpStatus === 'warning',
       // dutyTime null for mobile entries — fall back to FDP used from FTL analysis
       _dutyMin:         parseHhmm(entry.dutyTime) || ftl.fdpUsedMin || 0,
-      // flightTime null for mobile — use blockMins (route DB lookup) or scheduledBlock
-      _flightMin:       entry.blockMins != null
-                          ? entry.blockMins
-                          : parseHhmm(entry.flightTime || entry.scheduledBlock || ''),
+      // actualBlockMins = pilot-entered real block (FTL tracking)
+      // Falls back to blockMins (route DB) then flightTime (Merlot scheduled)
+      _flightMin:       entry.actualBlockMins != null
+                          ? entry.actualBlockMins
+                          : entry.blockMins != null
+                            ? entry.blockMins
+                            : parseHhmm(entry.flightTime || entry.scheduledBlock || ''),
       _prevEntry:       prev,
     };
   });
@@ -500,10 +503,14 @@ export default function RosterAnalyser() {
                     limitMin={CUMULATIVE_LIMITS.flight28days}
                     status={cumulStatus(cumul.flight28, CUMULATIVE_LIMITS.flight28days)}
                   />
-                  <div className="pt-2 border-t border-slate-700/50 text-xs text-slate-500 flex gap-4">
+                  <div className="pt-2 border-t border-slate-700/50 text-xs text-slate-500 flex gap-4 flex-wrap">
                     <span>Month total: {fmtMin(cumul.monthFlight)} flight</span>
                     <span>{fmtMin(cumul.monthDuty)} duty</span>
-                    <span className="text-slate-600">(12-month needs cross-month data)</span>
+                    <span className="text-amber-600">
+                      {enriched.filter(e => e.actualBlockMins != null).length > 0
+                        ? `✏ ${enriched.filter(e => e.actualBlockMins != null).length} actual block entries`
+                        : '(using scheduled block — enter actual via calendar edit)'}
+                    </span>
                   </div>
                 </div>
               </div>
