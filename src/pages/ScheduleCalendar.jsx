@@ -505,8 +505,14 @@ export default function ScheduleCalendar({
 
   // Strip enrichment-computed props before persisting
   function stripComputed(e) {
-    const { _ftlViolation, _ftlWarning, _ftlAnalysis, _prevEntry,
-            _restBeforeMin, _minRestRequired, _restViolation, ...raw } = e;
+    const raw = { ...e };
+    delete raw._ftlViolation;
+    delete raw._ftlWarning;
+    delete raw._ftlAnalysis;
+    delete raw._prevEntry;
+    delete raw._restBeforeMin;
+    delete raw._minRestRequired;
+    delete raw._restViolation;
     return raw;
   }
 
