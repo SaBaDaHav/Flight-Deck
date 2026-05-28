@@ -343,8 +343,17 @@ export default function ScheduleCalendar({
       const rawArrays = await Promise.all(base64s.map(b64 => analyzeMobileRoster(b64, year)));
       const allRaw    = rawArrays.flat();
       if (!allRaw || allRaw.length === 0) throw new Error('No entries found in mobile roster image.');
+      // Deduplicate by date — keep first occurrence (screenshots may overlap at boundaries)
+      const seenDates = new Set();
+      const dedupedRaw = allRaw.filter(e => {
+        if (!e.date) return true; // keep undated entries
+        if (seenDates.has(e.date)) return false;
+        seenDates.add(e.date);
+        return true;
+      });
+      const allRawDeduped = dedupedRaw;
       const learnedRoutes = loadLearnedRoutes();
-      const entries   = postProcessMobileEntries(allRaw, year, learnedRoutes);
+      const entries   = postProcessMobileEntries(allRawDeduped, year, learnedRoutes);
 
       const dominant    = dominantMonth(entries);
       const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
@@ -367,7 +376,7 @@ export default function ScheduleCalendar({
         }
       }
       if (missingLegs.size > 0) {
-        setPendingRouteSave({ allRaw, year, targetYear, targetMonth });
+        setPendingRouteSave({ allRaw: allRawDeduped, year, targetYear, targetMonth });
         setUnknownRouteLegs([...missingLegs]);
         setRouteInputs({});
         return;
