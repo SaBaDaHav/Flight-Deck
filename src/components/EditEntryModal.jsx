@@ -79,16 +79,15 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
   const actualBlockMins = useMemo(() => {
     if (!actualLegs.length) return null;
     let total = 0;
-    let allFilled = true;
     for (const leg of actualLegs) {
-      if (!leg.offBlock || !leg.onBlock) { allFilled = false; continue; }
+      if (!leg.offBlock || !leg.onBlock) { continue; }
       try {
         const [oh, om] = leg.offBlock.split(':').map(Number);
         const [nh, nm] = leg.onBlock.split(':').map(Number);
         let diff = (nh * 60 + nm) - (oh * 60 + om);
         if (diff < 0) diff += 1440;
         total += diff;
-      } catch { allFilled = false; }
+      } catch { /* skip invalid leg */ }
     }
     return total > 0 ? total : null;
   }, [actualLegs]);
