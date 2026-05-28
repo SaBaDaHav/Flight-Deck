@@ -17,7 +17,7 @@ const MONTH_NAMES = [
 
 // Reject totals rows / malformed AI output — every real entry must have YYYY-MM-DD
 function isValidDate(d) {
-  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/u.test(d);
 }
 
 function parseHhmm(str) {
@@ -91,11 +91,6 @@ function mobileEntryType(dutyCode) {
   return 'FLIGHT';
 }
 
-function hhmm(str) {
-  if (!str) return 0;
-  const [h, m] = str.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
 
 function minsToHhmm(m) {
   if (m < 0) m += 1440;
@@ -279,11 +274,12 @@ export default function ScheduleCalendar({
         flightEntries.map(e => `${e.date}=${e.blockMins ?? 'null('+e.flightTime+')'}`));
       setEntries(enrichEntries(backfilled));
       setTotals(stored.totals || null);
+      setLoadError(null);
     } else {
       setEntries([]);
       setTotals(null);
+      setLoadError(null);
     }
-    setLoadError(null);
   }, [year, month]);
 
   const navigateMonth = (delta) => {
@@ -366,6 +362,22 @@ export default function ScheduleCalendar({
     }
   }, [year, month]);
 
+  // ─── finalizeRoster — check unknowns, then save ────────────────────────────
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
+    const unknowns = getUnknownAirports(routes);
+
+    if (unknowns.length > 0) {
+      // Hold everything until the user classifies the unknown airports
+      setPendingSave({ rawEntries, totals, crew, targetYear, targetMonth });
+      setUnknownCodes(unknowns);
+      return;
+    }
+    commitSave(rawEntries, totals, crew, targetYear, targetMonth);
+  }, []);
+
   // ─── mobile list view processor (supports multiple screenshots) ───────────
 
   const processMobileFiles = useCallback(async (files) => {
@@ -409,22 +421,6 @@ export default function ScheduleCalendar({
       if (mobileInputRef.current) mobileInputRef.current.value = '';
     }
   }, [year, month]);
-
-  // ─── finalizeRoster — check unknowns, then save ────────────────────────────
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
-    const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
-    const unknowns = getUnknownAirports(routes);
-
-    if (unknowns.length > 0) {
-      // Hold everything until the user classifies the unknown airports
-      setPendingSave({ rawEntries, totals, crew, targetYear, targetMonth });
-      setUnknownCodes(unknowns);
-      return;
-    }
-    commitSave(rawEntries, totals, crew, targetYear, targetMonth);
-  }, []);
 
   const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
     // Reject placeholder crew names (e.g. AI returning literal "string" from schema).
