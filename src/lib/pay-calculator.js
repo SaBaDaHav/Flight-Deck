@@ -1,4 +1,5 @@
 import { DEFAULT_RATES } from '../constants/default-rates.js';
+import { calcMonthlyWithholding } from './tax-calculator.js';
 
 // Safe rate accessor — falls back to DEFAULT_RATES when key missing (handles old stored rates)
 function r(rates, key) {
@@ -130,7 +131,7 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
   const simActive     = typeof deductionEnds === 'string' && currentMonth <= deductionEnds;
   const simDeduction  = simActive ? r(rates, 'simTrainingDeduction') : 0;
 
-  const incomeTax       = 0; // TVJ withholds; shown from payslip — left as placeholder
+  const incomeTax = calcMonthlyWithholding(paymentMonth ?? 0, totalIncome);
   const totalDeductions = socialSecurity + simDeduction + incomeTax;
 
   return {
