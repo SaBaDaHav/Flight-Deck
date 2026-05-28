@@ -281,18 +281,27 @@ export default function RosterAnalyser() {
     }
   }
 
-  // Auto-detect my flights to give away:
-  // Starting from the first date of their flights, find my flight that departs BKK,
-  // then follow the chain forward until I return to BKK (homebase).
   function detectMySwapFlights(theirFlights) {
-    if (!theirFlights.length || !enriched.length) return [];
+    if (!theirFlights.length) return [];
     const HOME = 'BKK';
     const firstDate = theirFlights[0].date;
-    const sorted = [...enriched]
+    const firstMonth = parseInt(firstDate.slice(5, 7), 10);
+    const firstYear  = parseInt(firstDate.slice(0, 4), 10);
+
+    // Load entries from the month containing their flights (may differ from current view)
+    let sourceEntries = enriched;
+    if (firstYear !== year || firstMonth !== month) {
+      const otherRoster = loadRoster(firstYear, firstMonth);
+      if (otherRoster?.entries?.length) {
+        sourceEntries = enrichEntries(otherRoster.entries);
+      }
+    }
+
+    const sorted = [...sourceEntries]
       .filter(e => e.type === 'FLIGHT')
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Find my flight on or just before their first date that departs BKK
+    // Find my flight on or after their first date that departs BKK
     const startFlight = sorted.find(e =>
       e.date >= firstDate &&
       (e.from === HOME || e.sectors?.[0]?.origin === HOME)
@@ -307,8 +316,7 @@ export default function RosterAnalyser() {
       const lastDest = current.sectors?.length > 0
         ? current.sectors[current.sectors.length - 1].dest
         : current.to;
-      if (lastDest === HOME) break; // returned to BKK
-      // Find next flight after current date
+      if (lastDest === HOME) break;
       const next = sorted.find(e =>
         e.date > current.date &&
         (e.from === lastDest || e.sectors?.[0]?.origin === lastDest)
@@ -322,8 +330,16 @@ export default function RosterAnalyser() {
   // Build modified roster with swap applied, re-run FTL analysis
   function buildSwappedRoster(theirFlights, mySwapFlights) {
     const myDates = new Set(mySwapFlights.map(e => e.date));
-    // Remove my swap flights, keep everything else
-    const kept = enriched.filter(e =>
+    // Load source roster (may be different month from current view)
+    const firstDate = theirFlights[0]?.date || '';
+    const srcYear  = firstDate ? parseInt(firstDate.slice(0, 4), 10) : year;
+    const srcMonth = firstDate ? parseInt(firstDate.slice(5, 7), 10) : month;
+    let baseEntries = enriched;
+    if (srcYear !== year || srcMonth !== month) {
+      const otherRoster = loadRoster(srcYear, srcMonth);
+      if (otherRoster?.entries?.length) baseEntries = enrichEntries(otherRoster.entries);
+    }
+    const kept = baseEntries.filter(e =>
       !myDates.has(e.date) || e.type !== 'FLIGHT'
     );
     // Convert their flights to roster entry schema
