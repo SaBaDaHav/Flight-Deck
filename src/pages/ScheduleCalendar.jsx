@@ -593,7 +593,14 @@ export default function ScheduleCalendar({
       // blockMins (route DB) is authoritative off-block→on-block time.
       // flightTime from Merlot column is also block time.
       // Never use (release - report) which is FDP and ~2h longer per duty day.
-      const entryBlock = e.blockMins != null ? e.blockMins : parseHhmm(e.flightTime);
+      const route = (e.route || (e.sectors?.length
+        ? [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-')
+        : e.from && e.to ? `${e.from}-${e.to}` : ''));
+      const entryBlock = e.blockMins != null
+        ? e.blockMins
+        : calcTotalBlockMinsWithLearned(route, loadLearnedRoutes())
+        || parseHhmm(e.flightTime)
+        || 0;
       console.log('[FlightTotal] day:', e.date, 'blockMins:', e.blockMins, 'flightTime:', e.flightTime, 'entryBlock:', entryBlock, 'type:', e.type);
       flightMins += entryBlock;
       dutyMins   += parseHhmm(e.dutyTime);
