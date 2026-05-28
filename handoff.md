@@ -24,11 +24,14 @@ Full brief: CLAUDE.md in project root (gitignored)
 ---
 
 ## Known Issues (remaining)
-
 1. Duty: 0:00 and TAFB: 0:00 in bottom bar for mobile entries — acceptable (mobile has no duty/TAFB)
-2. RosterAnalyser tab — currently minimal, needs TVJ FTL analysis view
-3. ✅ March 2026 validated — calculator confirmed 406,561 THB (406,061 original + 500 DOM per diem now included)
-4. NAS migration pending (Phase 2 — RS815+, Docker, FastAPI, SQLite)
+2. RosterAnalyser tab — needs real-world testing with live roster data
+3. NAS migration pending (Phase 2 — RS815+, Docker, FastAPI, SQLite)
+
+## Recent Fixes (this session — continued)
+8. Mobile duplicate entries — deduplicate by date before saving (overlapping screenshots)
+9. Missing legs detection — was checking e.route (undefined), now uses sectors/from/to
+10. Block time 84:00 verified ✅ — June 2026 matches Merlot exactly
 
 ---
 
