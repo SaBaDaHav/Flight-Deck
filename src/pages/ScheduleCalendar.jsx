@@ -546,14 +546,22 @@ export default function ScheduleCalendar({
 
     let flightMins = 0, dutyMins = 0, tafbMins = 0;
     for (const e of flights) {
-      flightMins += parseHhmm(e.flightTime);
+      // blockMins (route DB) is authoritative off-block→on-block time.
+      // flightTime from Merlot column is also block time.
+      // Never use (release - report) which is FDP and ~2h longer per duty day.
+      const entryBlock = e.blockMins != null ? e.blockMins : parseHhmm(e.flightTime);
+      flightMins += entryBlock;
       dutyMins   += parseHhmm(e.dutyTime);
       tafbMins   += parseHhmm(e.tafb);
     }
 
-    // Use roster totals if available (more accurate — comes from Merlot footer)
-    const totalFlightMins = totals ? parseHhmm(totals.flightTime) : flightMins;
-    const totalDutyMins   = totals ? parseHhmm(totals.dutyTime)   : dutyMins;
+    // Prefer per-entry computed sum; AI-extracted totals.flightTime may be wrong.
+    const totalFlightMins = flightMins > 0
+      ? flightMins
+      : (totals ? parseHhmm(totals.flightTime) : 0);
+    const totalDutyMins = dutyMins > 0
+      ? dutyMins
+      : (totals ? parseHhmm(totals.dutyTime) : 0);
 
     const violatedEntries = flights
       .filter(e => e._ftlViolation)
@@ -814,8 +822,8 @@ export default function ScheduleCalendar({
                   <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${
-                        stats.totalFlightMins > 5400 ? 'bg-red-500' :
-                        stats.totalFlightMins > 4800 ? 'bg-amber-400' : 'bg-sky-500'
+                        stats.totalFlightMins > 6000 ? 'bg-red-500' :
+                        stats.totalFlightMins > 5400 ? 'bg-amber-400' : 'bg-sky-500'
                       }`}
                       style={{ width: `${Math.min(100, stats.totalFlightMins / 60)}%` }}
                     />
