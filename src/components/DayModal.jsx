@@ -49,7 +49,7 @@ function FtlBar({ label, usedMin, limitMin, status }) {
   );
 }
 
-function FlagRow({ label, value, active, icon }) {
+function FlagRow({ label, active, icon }) {
   return (
     <div className="flex items-center justify-between text-xs">
       <span className="text-slate-400">{label}</span>
@@ -164,7 +164,7 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white text-xl leading-none mt-0.5 flex-shrink-0"
+            className="text-slate-400 hover:text-white text-xl leading-none mt-0.5 shrink-0"
             aria-label="Close"
           >×</button>
         </div>
