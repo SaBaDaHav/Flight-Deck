@@ -175,7 +175,7 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
               {isNew ? 'Add duty' : 'Edit duty'}
             </h2>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+          <div className="flex items-center gap-2 shrink-0 mt-0.5">
             {onViewFtl && !isNew && entry.type === 'FLIGHT' && (
               <button
                 type="button"
@@ -321,8 +321,8 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
               onClick={() => setReleaseNextDay(v => !v)}
               className="flex items-center gap-2 text-sm text-slate-300 select-none"
             >
-              <div className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${releaseNextDay ? 'bg-sky-600' : 'bg-slate-600'}`}>
-                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${releaseNextDay ? 'left-[18px]' : 'left-0.5'}`} />
+              <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${releaseNextDay ? 'bg-sky-600' : 'bg-slate-600'}`}>
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${releaseNextDay ? 'left-4.5' : 'left-0.5'}`} />
               </div>
               Release next day (+1)
             </button>
