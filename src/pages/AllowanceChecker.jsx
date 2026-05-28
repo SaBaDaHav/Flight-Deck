@@ -438,9 +438,21 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       let interActual = '';
       if (!isOff && !isSim && !isGround && !isTraining) {
         // Build '-' separated route for DB lookup and airport classification
-        const classRoute = entry.sectors?.length > 0
-          ? [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-')
-          : [entry.from, entry.to].filter(Boolean).join('-');
+        // Build classification route — try sectors first, then from/to, then dutyCode
+        // Mobile entries may have no sectors but have from/to populated
+        let classRoute = '';
+        if (entry.sectors?.length > 0) {
+          classRoute = [entry.sectors[0].origin, ...entry.sectors.map(s => s.dest)].join('-');
+        } else if (entry.from && entry.to) {
+          classRoute = `${entry.from}-${entry.to}`;
+        } else if (entry.from) {
+          classRoute = entry.from;
+        }
+        // Also check route field (mobile entries store 'BKK-ICN-BKK' here)
+        if (!classRoute && entry.route) {
+          classRoute = (entry.route || '').replace(/→/gu, '-');
+        }
+        console.log(`[Sync D${row.date}] classRoute="${classRoute}" from="${entry.from}" to="${entry.to}" sectors=${entry.sectors?.length ?? 0}`);
 
         // Route DB is most reliable; fall back to stored entry data
         const dbMins    = calcTotalBlockMinsWithLearned(classRoute, learnedRoutes);
