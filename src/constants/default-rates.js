@@ -10,8 +10,9 @@ export const DEFAULT_RATES = {
   interBlockNtPerMin:     8.47,    // THB/min — non-taxable portion (24.2%)
   // interBlockTaxRatio = 0.758, interBlockNtRatio = 0.242
 
-  // Per diem (INTER only confirmed; DOM 500/night placement TBC — use otherIncome)
+  // Per diem
   perDiemInterUsd:          60,    // USD/INTER overnight — taxable
+  perDiemDom:              500,    // THB/DOM overnight — same ค่าพักข้ามคืน line
   usdThb:                35.55,    // edit monthly (March 2026 = 35.55)
 
   // Fixed (Captain rank, every month)

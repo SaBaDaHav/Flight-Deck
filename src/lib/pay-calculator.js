@@ -71,6 +71,7 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
   let trainingDays   = 0;   // CBT/recurrent training days (transport only, no ค่าสอน)
   let interDepDays   = 0;   // INTER departure days (perDiem === 'INTER')
   let interNights    = 0;   // same count as interDepDays
+  let domNights      = 0;   // DOM overnight stays
   const simDays      = simCount;
 
   for (const day of days) {
@@ -83,6 +84,7 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
     if (day.isGround)   gndTrgDays++;
     if (day.isTraining) trainingDays++;
     if (day.perDiem === 'INTER') { interDepDays++; interNights++; }
+    if (day.perDiem === 'DOM') domNights++;
   }
 
   // Transport: (flightDays + trainingDays + simDays − interDepDays) × rate
@@ -98,8 +100,10 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
   const interBlockTax = totalInterMins * r(rates, 'interBlockTaxPerMin');
   const interBlockNt  = totalInterMins * r(rates, 'interBlockNtPerMin');
 
-  // Per diem — INTER nights only (DOM 500/night TBC: pilot adds to otherIncome)
-  const perDiem = interNights * r(rates, 'perDiemInterUsd') * r(rates, 'usdThb');
+  // Per diem — INTER nights + DOM nights (500 THB, same payslip line)
+  const perDiemInter = interNights * r(rates, 'perDiemInterUsd') * r(rates, 'usdThb');
+  const perDiemDom   = domNights   * r(rates, 'perDiemDom');
+  const perDiem      = perDiemInter + perDiemDom;
 
   // Instruction (ค่าสอน): GROUND TRAINING days × 10,080 (1,440/hr × 7hr)
   const instructionPerDay = r(rates, 'instructionRatePerHr') * r(rates, 'instructionHoursPerDay');
@@ -140,6 +144,8 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
       interBlockTax,
       interBlockNt,
       perDiem,
+      perDiemInter,
+      perDiemDom,
       otherIncome,
       totalIncome,
     },
