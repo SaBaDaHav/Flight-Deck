@@ -43,6 +43,12 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     return entry.layover ? 'INTER' : 'NONE';
   });
   const [notes, setNotes] = useState(isNew ? '' : (entry._manualNotes || ''));
+  const [actualOffBlock, setActualOffBlock] = useState(
+    isNew ? '' : (entry?.actualOffBlock || '')
+  );
+  const [actualOnBlock, setActualOnBlock] = useState(
+    isNew ? '' : (entry?.actualOnBlock || '')
+  );
 
   // Live block-time preview from route DB
   const blockPreview = useMemo(() => {
@@ -55,6 +61,17 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
       return null;
     }
   }, [type, route]);
+
+  const actualBlockMins = useMemo(() => {
+    if (!actualOffBlock || !actualOnBlock) return null;
+    try {
+      const [oh, om] = actualOffBlock.split(':').map(Number);
+      const [nh, nm] = actualOnBlock.split(':').map(Number);
+      let diff = (nh * 60 + nm) - (oh * 60 + om);
+      if (diff < 0) diff += 1440; // overnight
+      return diff > 0 ? diff : null;
+    } catch { return null; }
+  }, [actualOffBlock, actualOnBlock]);
 
   useEffect(() => {
     const handler = e => { if (e.key === 'Escape') onClose(); };
@@ -116,6 +133,9 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
       woclEncroached: false,
       comments:      [...prevNonManual, ...manualLine],
       allowances:    entry?.allowances || '',
+      actualOffBlock:  actualOffBlock.trim() || null,
+      actualOnBlock:   actualOnBlock.trim()  || null,
+      actualBlockMins: actualBlockMins ?? (entry?.actualBlockMins ?? null),
       editedManually: true,
       _manualNotes:  notes.trim() || undefined,
       _perDiem:      perDiem,
@@ -217,6 +237,51 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
               </div>
               {route.length >= 7 && !blockPreview && (
                 <p className="text-xs text-amber-400 mt-1">Route not in DB — block time unchanged</p>
+              )}
+            </div>
+          )}
+
+          {/* Actual block time (FTL tracking only — does not affect pay) */}
+          {showRoute && (
+            <div>
+              <label className="text-xs text-slate-400 block mb-1.5">
+                Actual block time
+                <span className="text-slate-600 ml-1">(FTL tracking only · not used for pay)</span>
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Off-block (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={actualOffBlock}
+                    onChange={e => setActualOffBlock(e.target.value)}
+                    placeholder="02:25"
+                    maxLength={5}
+                    className="w-full bg-slate-700 border border-slate-500 focus:border-amber-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">On-block (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={actualOnBlock}
+                    onChange={e => setActualOnBlock(e.target.value)}
+                    placeholder="10:05"
+                    maxLength={5}
+                    className="w-full bg-slate-700 border border-slate-500 focus:border-amber-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
+                  />
+                </div>
+              </div>
+              {actualBlockMins && (
+                <p className="text-xs text-amber-300 mt-1 font-mono">
+                  Actual block: {Math.floor(actualBlockMins/60)}:{String(actualBlockMins%60).padStart(2,'0')}
+                  {entry?.blockMins && actualBlockMins !== entry.blockMins && (
+                    <span className="text-slate-500 ml-2">
+                      (scheduled: {Math.floor(entry.blockMins/60)}:{String(entry.blockMins%60).padStart(2,'0')}
+                      {actualBlockMins > entry.blockMins ? ' ▲' : ' ▼'})
+                    </span>
+                  )}
+                </p>
               )}
             </div>
           )}
