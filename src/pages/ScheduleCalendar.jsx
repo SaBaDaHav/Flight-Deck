@@ -291,7 +291,6 @@ export default function ScheduleCalendar({
     setYear(y);
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
     // Reject placeholder crew names (e.g. AI returning literal "string" from schema).
     // Fall back to the saved crew profile; if none exists, leave crew null.
@@ -314,7 +313,6 @@ export default function ScheduleCalendar({
 
   // ─── finalizeRoster — check unknowns, then save ────────────────────────────
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
     const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
     const unknowns = getUnknownAirports(routes);
