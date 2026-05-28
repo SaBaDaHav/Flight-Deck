@@ -364,7 +364,6 @@ export default function ScheduleCalendar({
 
   // ─── finalizeRoster — check unknowns, then save ────────────────────────────
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
     const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
     const unknowns = getUnknownAirports(routes);
@@ -699,7 +698,7 @@ export default function ScheduleCalendar({
         {/* ── Loading state ─────────────────────────────────────────────── */}
         {isLoading && (
           <div className="flex items-center gap-3 bg-sky-900/30 border border-sky-700/50 rounded-lg p-4">
-            <div className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            <div className="w-5 h-5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin shrink-0" />
             <div>
               <p className="text-sm font-semibold text-sky-300">Analyzing roster image…</p>
               <p className="text-xs text-slate-400">Claude is reading the Merlot roster. This takes ~10–20 seconds.</p>
@@ -710,7 +709,7 @@ export default function ScheduleCalendar({
         {/* ── Error state ───────────────────────────────────────────────── */}
         {loadError && (
           <div className="flex items-start gap-3 bg-red-900/30 border border-red-700/50 rounded-lg p-4">
-            <span className="text-red-400 text-lg flex-shrink-0">⚠</span>
+            <span className="text-red-400 text-lg shrink-0">⚠</span>
             <div>
               <p className="text-sm font-semibold text-red-300">Analysis failed</p>
               <p className="text-xs text-slate-300 mt-0.5">{loadError}</p>
