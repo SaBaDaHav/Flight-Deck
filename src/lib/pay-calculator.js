@@ -86,7 +86,8 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
   }
 
   // Transport: (flightDays + gndTrgDays + trainingDays + simDays − interDepDays) × rate
-  const transportDays = Math.max(0, flightDays + gndTrgDays + trainingDays + simDays - interDepDays);
+  const simTransportDays = simDays > 0 ? 1 : 0;
+  const transportDays = Math.max(0, flightDays + gndTrgDays + trainingDays + simTransportDays - interDepDays);
   const transport     = transportDays * r(rates, 'transportRate');
 
   // Sector
@@ -121,7 +122,7 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
   const currentMonth  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const deductionEnds = r(rates, 'trainingDeductionEnds');
   const simActive     = typeof deductionEnds === 'string' && currentMonth <= deductionEnds;
-  const simDeduction  = simActive ? simDays * r(rates, 'simTrainingDeduction') : 0;
+  const simDeduction  = simActive ? r(rates, 'simTrainingDeduction') : 0;
 
   const incomeTax       = 0; // TVJ withholds; shown from payslip — left as placeholder
   const totalDeductions = socialSecurity + simDeduction + incomeTax;
