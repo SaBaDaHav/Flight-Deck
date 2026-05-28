@@ -573,7 +573,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     }
 
     const simCountTotal = rows.filter(r => routeFlags(r.route).isSim).length;
-    const result = calcMonthlyPay(dayObjs, rates, simCountTotal);
+    const pmYear  = month === 12 ? year + 1 : year;
+    const pmMonth = month === 12 ? 1 : month + 1;
+    const result = calcMonthlyPay(dayObjs, rates, simCountTotal, pmYear, pmMonth);
 
     return {
       totals: { totalDomSched, totalInterSched, totalDomEff, totalInterEff, totalLegs, pdDom, pdInter },

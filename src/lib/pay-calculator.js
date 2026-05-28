@@ -62,7 +62,7 @@ export function calcDayPay(day, rates = DEFAULT_RATES) {
 // days     — array of day objects (shape as above)
 // rates    — rate object (defaults to DEFAULT_RATES)
 // simCount — total FFS sessions in month (for SIM deduction)
-export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
+export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, paymentYear = null, paymentMonth = null) {
   let totalDomMins   = 0;
   let totalInterMins = 0;
   let totalLegs      = 0;
@@ -119,7 +119,9 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0) {
 
   // Auto-disable SIM deduction after trainingDeductionEnds (Nov 2026 payment)
   const now = new Date();
-  const currentMonth  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const pmYear  = paymentYear  ?? now.getFullYear();
+  const pmMonth = paymentMonth ?? (now.getMonth() + 1);
+  const currentMonth = `${pmYear}-${String(pmMonth).padStart(2, '0')}`;
   const deductionEnds = r(rates, 'trainingDeductionEnds');
   const simActive     = typeof deductionEnds === 'string' && currentMonth <= deductionEnds;
   const simDeduction  = simActive ? r(rates, 'simTrainingDeduction') : 0;
