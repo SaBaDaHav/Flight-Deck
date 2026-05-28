@@ -4,7 +4,6 @@ import {
   analyzeEntry,
   getMinRest,
   CUMULATIVE_LIMITS,
-  isDisruptiveDuty,
   rerrpGapHours,
   countDisruptiveBetween,
 } from '../lib/ftl-rules.js';
