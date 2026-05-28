@@ -255,9 +255,6 @@ export default function ScheduleCalendar({
     if (stored) {
       const learnedRoutes = loadLearnedRoutes();
       const rawStored = (stored.entries || []).filter(e => isValidDate(e.date));
-      console.log('[LoadRoster] valid entries:', rawStored.length,
-        '| FLIGHT entries:', rawStored.filter(e => e.type === 'FLIGHT').length,
-        '| sample:', rawStored.find(e => e.type === 'FLIGHT'));
       const backfilled = rawStored.map(e => {
         if (e.type !== 'FLIGHT' || e.blockMins != null) return e;
         let route = null;
@@ -269,9 +266,6 @@ export default function ScheduleCalendar({
         const mins = route ? calcTotalBlockMinsWithLearned(route, learnedRoutes) : null;
         return mins != null ? { ...e, blockMins: mins } : e;
       });
-      const flightEntries = backfilled.filter(e => e.type === 'FLIGHT');
-      console.log('[LoadRoster] after backfill FLIGHT blockMins:',
-        flightEntries.map(e => `${e.date}=${e.blockMins ?? 'null('+e.flightTime+')'}`));
       setEntries(enrichEntries(backfilled));
       setTotals(stored.totals || null);
     } else {
@@ -627,13 +621,11 @@ export default function ScheduleCalendar({
         : calcTotalBlockMinsWithLearned(route, loadLearnedRoutes())
         || parseHhmm(e.flightTime)
         || 0;
-      console.log('[FlightTotal] day:', e.date, 'blockMins:', e.blockMins, 'flightTime:', e.flightTime, 'entryBlock:', entryBlock, 'type:', e.type);
       flightMins += entryBlock;
       dutyMins   += parseHhmm(e.dutyTime);
       tafbMins   += parseHhmm(e.tafb);
     }
 
-    console.log('[Stats] flightMins total:', flightMins, '=', fmtMin(flightMins), '| entries:', flights.length);
     // Use per-entry sum exclusively. Never fall back to totals.flightTime:
     // the Merlot footer covers the full roster period (may span multiple calendar months)
     // and mergeRosterResults sums both images — making it unreliable for a single calendar month.
