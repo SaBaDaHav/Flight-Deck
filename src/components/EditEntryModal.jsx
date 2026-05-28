@@ -43,12 +43,26 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     return entry.layover ? 'INTER' : 'NONE';
   });
   const [notes, setNotes] = useState(isNew ? '' : (entry._manualNotes || ''));
-  const [actualOffBlock, setActualOffBlock] = useState(
-    isNew ? '' : (entry?.actualOffBlock || '')
-  );
-  const [actualOnBlock, setActualOnBlock] = useState(
-    isNew ? '' : (entry?.actualOnBlock || '')
-  );
+  const [actualLegs, setActualLegs] = useState(() => {
+    if (isNew) return [];
+    // Load from existing entry if available
+    if (entry?.actualLegs?.length) return entry.actualLegs;
+    // Build empty legs from sectors
+    const sectorList = entry?.sectors?.length ? entry.sectors : [];
+    if (sectorList.length > 0) {
+      return sectorList.map(s => ({
+        origin: s.origin,
+        dest: s.dest,
+        offBlock: '',
+        onBlock: '',
+      }));
+    }
+    // Single leg fallback
+    if (entry?.from && entry?.to) {
+      return [{ origin: entry.from, dest: entry.to, offBlock: entry?.actualOffBlock || '', onBlock: entry?.actualOnBlock || '' }];
+    }
+    return [];
+  });
 
   // Live block-time preview from route DB
   const blockPreview = useMemo(() => {
@@ -63,15 +77,25 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
   }, [type, route]);
 
   const actualBlockMins = useMemo(() => {
-    if (!actualOffBlock || !actualOnBlock) return null;
-    try {
-      const [oh, om] = actualOffBlock.split(':').map(Number);
-      const [nh, nm] = actualOnBlock.split(':').map(Number);
-      let diff = (nh * 60 + nm) - (oh * 60 + om);
-      if (diff < 0) diff += 1440; // overnight
-      return diff > 0 ? diff : null;
-    } catch { return null; }
-  }, [actualOffBlock, actualOnBlock]);
+    if (!actualLegs.length) return null;
+    let total = 0;
+    let allFilled = true;
+    for (const leg of actualLegs) {
+      if (!leg.offBlock || !leg.onBlock) { allFilled = false; continue; }
+      try {
+        const [oh, om] = leg.offBlock.split(':').map(Number);
+        const [nh, nm] = leg.onBlock.split(':').map(Number);
+        let diff = (nh * 60 + nm) - (oh * 60 + om);
+        if (diff < 0) diff += 1440;
+        total += diff;
+      } catch { allFilled = false; }
+    }
+    return total > 0 ? total : null;
+  }, [actualLegs]);
+
+  function updateLeg(idx, field, value) {
+    setActualLegs(prev => prev.map((leg, i) => i === idx ? { ...leg, [field]: value } : leg));
+  }
 
   useEffect(() => {
     const handler = e => { if (e.key === 'Escape') onClose(); };
@@ -133,8 +157,7 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
       woclEncroached: false,
       comments:      [...prevNonManual, ...manualLine],
       allowances:    entry?.allowances || '',
-      actualOffBlock:  actualOffBlock.trim() || null,
-      actualOnBlock:   actualOnBlock.trim()  || null,
+      actualLegs:      actualLegs.length ? actualLegs : null,
       actualBlockMins: actualBlockMins ?? (entry?.actualBlockMins ?? null),
       editedManually: true,
       _manualNotes:  notes.trim() || undefined,
@@ -225,7 +248,21 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
                 <input
                   type="text"
                   value={route}
-                  onChange={e => setRoute(e.target.value.toUpperCase().replace(/[^A-Z-]/g, ''))}
+                  onChange={e => {
+                    const val = e.target.value.toUpperCase().replace(/[^A-Z-]/g, '');
+                    setRoute(val);
+                    // Rebuild legs when route changes
+                    const parts = val.split('-').filter(p => /^[A-Z]{3}$/.test(p));
+                    if (parts.length >= 2) {
+                      const newLegs = parts.slice(0, -1).map((o, i) => ({
+                        origin: o,
+                        dest: parts[i + 1],
+                        offBlock: actualLegs[i]?.offBlock || '',
+                        onBlock:  actualLegs[i]?.onBlock  || '',
+                      }));
+                      setActualLegs(newLegs);
+                    }
+                  }}
                   placeholder="BKK-ICN or BKK-SGN-BKK"
                   className="flex-1 bg-slate-700 border border-slate-500 focus:border-sky-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
                 />
@@ -242,47 +279,74 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
           )}
 
           {/* Actual block time (FTL tracking only — does not affect pay) */}
-          {showRoute && (
+          {showRoute && actualLegs.length > 0 && (
             <div>
               <label className="text-xs text-slate-400 block mb-1.5">
                 Actual block time
                 <span className="text-slate-600 ml-1">(FTL tracking only · not used for pay)</span>
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-500 block mb-1">Off-block (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={actualOffBlock}
-                    onChange={e => setActualOffBlock(e.target.value)}
-                    placeholder="02:25"
-                    maxLength={5}
-                    className="w-full bg-slate-700 border border-slate-500 focus:border-amber-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-500 block mb-1">On-block (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={actualOnBlock}
-                    onChange={e => setActualOnBlock(e.target.value)}
-                    placeholder="10:05"
-                    maxLength={5}
-                    className="w-full bg-slate-700 border border-slate-500 focus:border-amber-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
-                  />
-                </div>
-              </div>
-              {actualBlockMins && (
-                <p className="text-xs text-amber-300 mt-1 font-mono">
-                  Actual block: {Math.floor(actualBlockMins/60)}:{String(actualBlockMins%60).padStart(2,'0')}
-                  {entry?.blockMins && actualBlockMins !== entry.blockMins && (
-                    <span className="text-slate-500 ml-2">
-                      (scheduled: {Math.floor(entry.blockMins/60)}:{String(entry.blockMins%60).padStart(2,'0')}
-                      {actualBlockMins > entry.blockMins ? ' ▲' : ' ▼'})
+              <div className="space-y-2">
+                {actualLegs.map((leg, idx) => (
+                  <div key={idx} className="bg-slate-700/50 rounded-lg px-3 py-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono text-sky-300 shrink-0">
+                        {leg.origin}→{leg.dest}
+                      </span>
+                      {leg.offBlock && leg.onBlock && (() => {
+                        try {
+                          const [oh, om] = leg.offBlock.split(':').map(Number);
+                          const [nh, nm] = leg.onBlock.split(':').map(Number);
+                          let diff = (nh * 60 + nm) - (oh * 60 + om);
+                          if (diff < 0) diff += 1440;
+                          return (
+                            <span className="text-xs text-amber-300 font-mono ml-auto">
+                              {Math.floor(diff/60)}:{String(diff%60).padStart(2,'0')}
+                            </span>
+                          );
+                        } catch { return null; }
+                      })()}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">Off-block</label>
+                        <input
+                          type="text"
+                          value={leg.offBlock}
+                          onChange={e => updateLeg(idx, 'offBlock', e.target.value)}
+                          placeholder="02:25"
+                          maxLength={5}
+                          className="w-full bg-slate-700 border border-slate-600 focus:border-amber-400 focus:outline-none rounded px-2 py-1.5 text-sm text-white font-mono placeholder-slate-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-500 block mb-1">On-block</label>
+                        <input
+                          type="text"
+                          value={leg.onBlock}
+                          onChange={e => updateLeg(idx, 'onBlock', e.target.value)}
+                          placeholder="03:55"
+                          maxLength={5}
+                          className="w-full bg-slate-700 border border-slate-600 focus:border-amber-400 focus:outline-none rounded px-2 py-1.5 text-sm text-white font-mono placeholder-slate-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {actualBlockMins && (
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-xs text-slate-400">Total actual block</span>
+                    <span className="text-xs font-mono font-bold text-amber-300">
+                      {Math.floor(actualBlockMins/60)}:{String(actualBlockMins%60).padStart(2,'0')}
+                      {entry?.blockMins && actualBlockMins !== entry.blockMins && (
+                        <span className="text-slate-500 font-normal ml-2">
+                          vs scheduled {Math.floor(entry.blockMins/60)}:{String(entry.blockMins%60).padStart(2,'0')}
+                          {actualBlockMins > entry.blockMins ? ' ▲' : ' ▼'}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </p>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
