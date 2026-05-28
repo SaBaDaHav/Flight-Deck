@@ -323,3 +323,64 @@ FIELD RULES:
 - For CONTINUATION rows: copy report/release/sectors from the preceding FLIGHT row
 - Totals row at bottom: put in "totals" field (last row of the table, not an entry)
 - Include EVERY row — do not skip any`;
+
+// ─── Swap/Giveaway flight extraction ─────────────────────────────────────────
+
+// Analyze a swap/giveaway flight screenshot from another pilot's mobile Merlot.
+// Returns array of { dutyCode, route, date, dow, report, release, releaseNextDay, numLegs }
+export async function analyzeSwapFlight(imageBase64, selectedYear) {
+  const base64Data = imageBase64.split(',')[1];
+  const mediaType  = imageBase64.split(';')[0].split(':')[1];
+  const yearToUse  = selectedYear || new Date().getFullYear();
+  const prompt = SWAP_FLIGHT_PROMPT.replace(/\{\{YEAR\}\}/g, yearToUse);
+
+  const body = {
+    model: MODEL,
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Data } },
+          { type: 'text',  text: prompt },
+        ],
+      },
+    ],
+  };
+
+  const resp = await fetch(getEndpoint('/v1/messages'), {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Anthropic API error ${resp.status}: ${err}`);
+  }
+
+  const data = await resp.json();
+  const text = data.content?.[0]?.text || '';
+  const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const parsed = JSON.parse(clean);
+  return Array.isArray(parsed) ? parsed : (parsed.flights || []);
+}
+
+const SWAP_FLIGHT_PROMPT = `This is a Merlot mobile app screenshot showing flight duties for a swap or giveaway request at Thai VietJet Air.
+
+Each entry has TWO lines:
+  Line 1: DUTY_CODE: ROUTE  (e.g. "TKIX-1: BKK-TPE-KIX")
+  Line 2: Mon DD (Day) HH:MM L - [Mon DD (Day)] HH:MM L  (e.g. "Jun 01 (Mo) 00:25 L - 11:55 L")
+
+RULES:
+- dutyCode: everything before the colon on line 1
+- route: everything after the colon on line 1, normalized with dashes (e.g. "BKK-TPE-KIX")
+- date: start date as {{YEAR}}-MM-DD
+- dow: 3-letter abbreviation (Mon/Tue/Wed/Thu/Fri/Sat/Sun)
+- report: HH:MM — first time on line 2 (this is the report/check-in time)
+- release: HH:MM — last time on line 2 (this is the release time)
+- releaseNextDay: true if line 2 shows a second date before the release time
+- numLegs: count the number of airport codes minus 1 (e.g. BKK-TPE-KIX = 2 legs)
+
+Return ONLY a valid JSON array — no markdown, no explanation.
+Schema: [{"dutyCode":"TKIX-1","route":"BKK-TPE-KIX","date":"{{YEAR}}-06-01","dow":"Mon","report":"00:25","release":"11:55","releaseNextDay":false,"numLegs":2}]`;
