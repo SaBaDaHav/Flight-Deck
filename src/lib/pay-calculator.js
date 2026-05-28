@@ -25,7 +25,7 @@ export function calcDayPay(day, rates = DEFAULT_RATES) {
 
   // Transport: all activity types qualify; INTER departure days are excluded
   // (pilot receives per diem instead on those days)
-  const hasActivity = domMins > 0 || interMins > 0 || isSim || isTraining;
+  const hasActivity = domMins > 0 || interMins > 0 || isSim || isGround || isTraining;
   const isInterDep  = perDiem === 'INTER';
   const transport   = (hasActivity && !isInterDep) ? r(rates, 'transportRate') : 0;
 
@@ -87,9 +87,9 @@ export function calcMonthlyPay(days = [], rates = DEFAULT_RATES, simCount = 0, p
     if (day.perDiem === 'DOM') domNights++;
   }
 
-  // Transport: (flightDays + trainingDays + simDays − interDepDays) × rate
-  // Ground training (gndTrgDays) does NOT qualify — verified March 2026 payslip
-  const transportDays = Math.max(0, flightDays + trainingDays + simDays - interDepDays);
+  // Transport: (flightDays + gndTrgDays + trainingDays + simDays − interDepDays) × rate
+  // Verified March 2026: (14 flight + 2 gndTrg + 1 SIM) − 2 INTER dep = 15 × 840 = 12,600
+  const transportDays = Math.max(0, flightDays + gndTrgDays + trainingDays + simDays - interDepDays);
   const transport     = transportDays * r(rates, 'transportRate');
 
   // Sector
