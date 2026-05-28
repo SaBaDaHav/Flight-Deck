@@ -291,6 +291,87 @@ export default function ScheduleCalendar({
     setYear(y);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    // Reject placeholder crew names (e.g. AI returning literal "string" from schema).
+    // Fall back to the saved crew profile; if none exists, leave crew null.
+    let finalCrew = crew;
+    if (!finalCrew || !finalCrew.name || finalCrew.name === 'string') {
+      finalCrew = loadCrewProfile() || null;
+    }
+
+    const enriched = enrichEntries(rawEntries);
+    setYear(targetYear);
+    setMonth(targetMonth);
+    setEntries(enriched);
+    setTotals(totals || null);
+    if (finalCrew) { setCrewProfile(finalCrew); saveCrewProfile(finalCrew); }
+    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew: finalCrew });
+    setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
+    setPendingSave(null);
+    setUnknownCodes([]);
+  }, []);
+
+  // ─── finalizeRoster — check unknowns, then save ────────────────────────────
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
+    const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
+    const unknowns = getUnknownAirports(routes);
+
+    if (unknowns.length > 0) {
+      // Hold everything until the user classifies the unknown airports
+      setPendingSave({ rawEntries, totals, crew, targetYear, targetMonth });
+      setUnknownCodes(unknowns);
+      return;
+    }
+    commitSave(rawEntries, totals, crew, targetYear, targetMonth);
+  }, []);
+
+  // ─── mobile list view processor (supports multiple screenshots) ───────────
+
+  const processMobileFiles = useCallback(async (files) => {
+    if (!files || files.length === 0) return;
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    setIsLoading(true);
+    setLoadError(null);
+    setSavedInfo(null);
+    try {
+      const base64s   = await Promise.all(imageFiles.map(fileToBase64));
+      const rawArrays = await Promise.all(base64s.map(b64 => analyzeMobileRoster(b64, year)));
+      const allRaw    = rawArrays.flat();
+      if (!allRaw || allRaw.length === 0) throw new Error('No entries found in mobile roster image.');
+      const learnedRoutes = loadLearnedRoutes();
+      const entries   = postProcessMobileEntries(allRaw, year, learnedRoutes);
+
+      const dominant    = dominantMonth(entries);
+      const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
+      const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
+
+      // Collect FLIGHT legs missing from both route DB and learned routes
+      const missingLegs = new Set();
+      for (const e of entries) {
+        if (e.type === 'FLIGHT' && e.blockMins === null && e.route) {
+          for (const leg of findMissingLegs(e.route, learnedRoutes)) missingLegs.add(leg);
+        }
+      }
+      if (missingLegs.size > 0) {
+        setPendingRouteSave({ allRaw, year, targetYear, targetMonth });
+        setUnknownRouteLegs([...missingLegs]);
+        setRouteInputs({});
+        return;
+      }
+
+      finalizeRoster(entries, null, null, targetYear, targetMonth);
+    } catch (err) {
+      setLoadError(err.message || 'Failed to analyze mobile roster image.');
+    } finally {
+      setIsLoading(false);
+      if (mobileInputRef.current) mobileInputRef.current.value = '';
+    }
+  }, [year, month]);
+
   // ─── image processing ─────────────────────────────────────────────────────
 
   const processFiles = useCallback(async (files) => {
@@ -361,85 +442,6 @@ export default function ScheduleCalendar({
       setIsLoading(false);
     }
   }, [year, month]);
-
-  // ─── finalizeRoster — check unknowns, then save ────────────────────────────
-
-  const finalizeRoster = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
-    const routes   = rawEntries.map(e => e.from && e.to ? [e.from, e.to].join('-') : '').filter(Boolean);
-    const unknowns = getUnknownAirports(routes);
-
-    if (unknowns.length > 0) {
-      // Hold everything until the user classifies the unknown airports
-      setPendingSave({ rawEntries, totals, crew, targetYear, targetMonth });
-      setUnknownCodes(unknowns);
-      return;
-    }
-    commitSave(rawEntries, totals, crew, targetYear, targetMonth);
-  }, []);
-
-  // ─── mobile list view processor (supports multiple screenshots) ───────────
-
-  const processMobileFiles = useCallback(async (files) => {
-    if (!files || files.length === 0) return;
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
-    if (imageFiles.length === 0) return;
-    setIsLoading(true);
-    setLoadError(null);
-    setSavedInfo(null);
-    try {
-      const base64s   = await Promise.all(imageFiles.map(fileToBase64));
-      const rawArrays = await Promise.all(base64s.map(b64 => analyzeMobileRoster(b64, year)));
-      const allRaw    = rawArrays.flat();
-      if (!allRaw || allRaw.length === 0) throw new Error('No entries found in mobile roster image.');
-      const learnedRoutes = loadLearnedRoutes();
-      const entries   = postProcessMobileEntries(allRaw, year, learnedRoutes);
-
-      const dominant    = dominantMonth(entries);
-      const targetYear  = dominant ? parseInt(dominant.slice(0, 4), 10) : year;
-      const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
-
-      // Collect FLIGHT legs missing from both route DB and learned routes
-      const missingLegs = new Set();
-      for (const e of entries) {
-        if (e.type === 'FLIGHT' && e.blockMins === null && e.route) {
-          for (const leg of findMissingLegs(e.route, learnedRoutes)) missingLegs.add(leg);
-        }
-      }
-      if (missingLegs.size > 0) {
-        setPendingRouteSave({ allRaw, year, targetYear, targetMonth });
-        setUnknownRouteLegs([...missingLegs]);
-        setRouteInputs({});
-        return;
-      }
-
-      finalizeRoster(entries, null, null, targetYear, targetMonth);
-    } catch (err) {
-      setLoadError(err.message || 'Failed to analyze mobile roster image.');
-    } finally {
-      setIsLoading(false);
-      if (mobileInputRef.current) mobileInputRef.current.value = '';
-    }
-  }, [year, month]);
-
-  const commitSave = useCallback((rawEntries, totals, crew, targetYear, targetMonth) => {
-    // Reject placeholder crew names (e.g. AI returning literal "string" from schema).
-    // Fall back to the saved crew profile; if none exists, leave crew null.
-    let finalCrew = crew;
-    if (!finalCrew || !finalCrew.name || finalCrew.name === 'string') {
-      finalCrew = loadCrewProfile() || null;
-    }
-
-    const enriched = enrichEntries(rawEntries);
-    setYear(targetYear);
-    setMonth(targetMonth);
-    setEntries(enriched);
-    setTotals(totals || null);
-    if (finalCrew) { setCrewProfile(finalCrew); saveCrewProfile(finalCrew); }
-    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew: finalCrew });
-    setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
-    setPendingSave(null);
-    setUnknownCodes([]);
-  }, []);
 
   const handleClassifyAirport = useCallback((iata, type) => {
     learnAirport(iata, type);
