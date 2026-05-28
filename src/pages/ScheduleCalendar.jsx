@@ -249,11 +249,23 @@ export default function ScheduleCalendar({
   const fileInputRef     = useRef(null);
   const mobileInputRef   = useRef(null);
 
-  // Load stored roster when month/year changes
+  // Load stored roster when month/year changes — backfill blockMins from route DB for any entry missing it
   useEffect(() => {
     const stored = loadRoster(year, month);
     if (stored) {
-      setEntries(enrichEntries(stored.entries || []));
+      const learnedRoutes = loadLearnedRoutes();
+      const backfilled = (stored.entries || []).map(e => {
+        if (e.type !== 'FLIGHT' || e.blockMins != null) return e;
+        let route = null;
+        if (e.sectors?.length > 0) {
+          route = [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-');
+        } else if (e.from && e.to) {
+          route = `${e.from}-${e.to}`;
+        }
+        const mins = route ? calcTotalBlockMinsWithLearned(route, learnedRoutes) : null;
+        return mins != null ? { ...e, blockMins: mins } : e;
+      });
+      setEntries(enrichEntries(backfilled));
       setTotals(stored.totals || null);
     } else {
       setEntries([]);
@@ -312,11 +324,26 @@ export default function ScheduleCalendar({
         }
       }
 
-      // Fall back to scheduledBlock if AI omitted flightTime.
-      const rawEntries = merged.entries.map(e => ({
-        ...e,
-        flightTime: e.flightTime ?? e.scheduledBlock ?? null,
-      }));
+      // Backfill blockMins from route DB (authoritative block time) for all FLIGHT entries.
+      // Desktop AI extracts flightTime from Merlot column but may return null; route DB is reliable.
+      const learnedRoutes = loadLearnedRoutes();
+      const rawEntries = merged.entries.map(e => {
+        let blockMins = e.blockMins ?? null;
+        if (!blockMins && e.type === 'FLIGHT') {
+          let route = null;
+          if (e.sectors?.length > 0) {
+            route = [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-');
+          } else if (e.from && e.to) {
+            route = `${e.from}-${e.to}`;
+          }
+          if (route) blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes);
+        }
+        return {
+          ...e,
+          blockMins,
+          flightTime: e.flightTime ?? e.scheduledBlock ?? null,
+        };
+      });
       finalizeRoster(rawEntries, merged.totals, merged.crew, targetYear, targetMonth);
 
     } catch (err) {
@@ -550,15 +577,16 @@ export default function ScheduleCalendar({
       // flightTime from Merlot column is also block time.
       // Never use (release - report) which is FDP and ~2h longer per duty day.
       const entryBlock = e.blockMins != null ? e.blockMins : parseHhmm(e.flightTime);
+      console.log('[FlightTotal] day:', e.date, 'blockMins:', e.blockMins, 'flightTime:', e.flightTime, 'entryBlock:', entryBlock, 'type:', e.type);
       flightMins += entryBlock;
       dutyMins   += parseHhmm(e.dutyTime);
       tafbMins   += parseHhmm(e.tafb);
     }
 
-    // Prefer per-entry computed sum; AI-extracted totals.flightTime may be wrong.
-    const totalFlightMins = flightMins > 0
-      ? flightMins
-      : (totals ? parseHhmm(totals.flightTime) : 0);
+    // Use per-entry sum exclusively. Never fall back to totals.flightTime:
+    // the Merlot footer covers the full roster period (may span multiple calendar months)
+    // and mergeRosterResults sums both images — making it unreliable for a single calendar month.
+    const totalFlightMins = flightMins;
     const totalDutyMins = dutyMins > 0
       ? dutyMins
       : (totals ? parseHhmm(totals.dutyTime) : 0);
