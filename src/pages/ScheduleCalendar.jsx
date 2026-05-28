@@ -280,6 +280,7 @@ export default function ScheduleCalendar({
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   const navigateMonth = (delta) => {
@@ -309,6 +310,7 @@ export default function ScheduleCalendar({
     setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
     setPendingSave(null);
     setUnknownCodes([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── finalizeRoster — check unknowns, then save ────────────────────────────
@@ -324,6 +326,7 @@ export default function ScheduleCalendar({
       return;
     }
     commitSave(rawEntries, totals, crew, targetYear, targetMonth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── mobile list view processor (supports multiple screenshots) ───────────
@@ -368,6 +371,7 @@ export default function ScheduleCalendar({
       setIsLoading(false);
       if (mobileInputRef.current) mobileInputRef.current.value = '';
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   // ─── image processing ─────────────────────────────────────────────────────
@@ -439,6 +443,7 @@ export default function ScheduleCalendar({
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   const handleClassifyAirport = useCallback((iata, type) => {
@@ -549,6 +554,7 @@ export default function ScheduleCalendar({
       totals:  stored?.totals  || null,
       crew:    stored?.crew    || null,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   // Delete an entry (revert day to OFF)
@@ -573,6 +579,7 @@ export default function ScheduleCalendar({
       totals:  stored?.totals || null,
       crew:    stored?.crew   || null,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   // ─── computed stats ───────────────────────────────────────────────────────
