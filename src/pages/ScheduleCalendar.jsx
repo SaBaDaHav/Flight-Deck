@@ -6,6 +6,7 @@ import { getUnknownAirports, learnAirport } from '../lib/airport-db.js';
 import { calcTotalBlockMinsWithLearned, findMissingLegs } from '../constants/route-block-times.js';
 import CalendarGrid from '../components/CalendarGrid.jsx';
 import DayModal from '../components/DayModal.jsx';
+import EditEntryModal from '../components/EditEntryModal.jsx';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -233,7 +234,8 @@ export default function ScheduleCalendar({
   entries, setEntries, totals, setTotals,
   crewProfile, setCrewProfile,
 }) {
-  const [selectedDay,    setSelectedDay]    = useState(null);
+  const [selectedDay,    setSelectedDay]    = useState(null); // DayModal (FTL details view)
+  const [editingDay,     setEditingDay]     = useState(null); // EditEntryModal { entry, date }
   const [isLoading,      setIsLoading]      = useState(false);
   const [loadError,      setLoadError]      = useState(null);
   const [isDragging,     setIsDragging]     = useState(false);
@@ -444,9 +446,15 @@ export default function ScheduleCalendar({
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = () => setIsDragging(false);
 
-  // ─── day click → modal ────────────────────────────────────────────────────
+  // ─── day click → edit modal ───────────────────────────────────────────────
 
   const handleDayClick = useCallback((entry, day) => {
+    const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    setEditingDay({ entry: entry ?? null, date: dateStr });
+  }, [year, month]);
+
+  // Open FTL details modal (DayModal) — called from EditEntryModal "FTL Details" button
+  const handleViewFtl = useCallback((entry) => {
     if (!entry) return;
     const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
     const idx = sorted.findIndex(e => e.date === entry.date);
@@ -458,6 +466,73 @@ export default function ScheduleCalendar({
       : null;
     setSelectedDay({ entry, prevEntry: prevFlight || null, nextEntry: nextFlight || null });
   }, [entries]);
+
+  // Strip enrichment-computed props before persisting
+  function stripComputed(e) {
+    const { _ftlViolation, _ftlWarning, _ftlAnalysis, _prevEntry,
+            _restBeforeMin, _minRestRequired, _restViolation, ...raw } = e;
+    return raw;
+  }
+
+  // Save a manually edited (or newly added) entry
+  const handleEditSave = useCallback((updatedEntry) => {
+    setEditingDay(null);
+
+    // Update display state
+    setEntries(prev => {
+      const kept = prev.filter(e =>
+        e.date !== updatedEntry.date ||
+        e.type === 'COMMENT' ||
+        e.type === 'PROFILE',
+      );
+      const newList = updatedEntry.type !== 'OFF'
+        ? [...kept, updatedEntry]
+        : kept;
+      newList.sort((a, b) => a.date.localeCompare(b.date));
+      return enrichEntries(newList);
+    });
+
+    // Persist to storage using fresh stored data to avoid stale-closure issues
+    const stored = loadRoster(year, month);
+    const prevRaw = (stored?.entries || []);
+    const keptRaw = prevRaw.filter(e =>
+      e.date !== updatedEntry.date ||
+      e.type === 'COMMENT' ||
+      e.type === 'PROFILE',
+    );
+    const rawEntry = stripComputed(updatedEntry);
+    const newRaw   = rawEntry.type !== 'OFF' ? [...keptRaw, rawEntry] : keptRaw;
+    newRaw.sort((a, b) => a.date.localeCompare(b.date));
+    saveRoster(year, month, {
+      entries: newRaw,
+      totals:  stored?.totals  || null,
+      crew:    stored?.crew    || null,
+    });
+  }, [year, month]);
+
+  // Delete an entry (revert day to OFF)
+  const handleEditDelete = useCallback((date) => {
+    setEditingDay(null);
+
+    setEntries(prev => {
+      const kept = prev.filter(e =>
+        e.date !== date || e.type === 'COMMENT' || e.type === 'PROFILE',
+      );
+      kept.sort((a, b) => a.date.localeCompare(b.date));
+      return enrichEntries(kept);
+    });
+
+    const stored = loadRoster(year, month);
+    const keptRaw = (stored?.entries || []).filter(e =>
+      e.date !== date || e.type === 'COMMENT' || e.type === 'PROFILE',
+    );
+    keptRaw.sort((a, b) => a.date.localeCompare(b.date));
+    saveRoster(year, month, {
+      entries: keptRaw,
+      totals:  stored?.totals || null,
+      crew:    stored?.crew   || null,
+    });
+  }, [year, month]);
 
   // ─── computed stats ───────────────────────────────────────────────────────
 
@@ -778,7 +853,23 @@ export default function ScheduleCalendar({
         )}
       </div>
 
-      {/* ── Day modal ────────────────────────────────────────────────────── */}
+      {/* ── Edit entry modal (z-40, all cell clicks) ─────────────────────── */}
+      {editingDay && (
+        <EditEntryModal
+          entry={editingDay.entry}
+          date={editingDay.date}
+          onSave={handleEditSave}
+          onDelete={() => handleEditDelete(editingDay.date)}
+          onClose={() => setEditingDay(null)}
+          onViewFtl={
+            editingDay.entry?.type === 'FLIGHT'
+              ? () => handleViewFtl(editingDay.entry)
+              : null
+          }
+        />
+      )}
+
+      {/* ── Day modal — FTL details view (z-50, on top of edit modal) ──── */}
       {selectedDay && (
         <DayModal
           entry={selectedDay.entry}

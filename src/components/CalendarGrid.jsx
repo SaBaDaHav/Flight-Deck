@@ -5,7 +5,7 @@ const DOW_HEADERS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // ─── color scheme (from CLAUDE.md §10.1) ─────────────────────────────────────
 function getCellColor(entry) {
   if (!entry || entry.type === 'OFF') {
-    return { bg: 'bg-slate-800/40', text: 'text-slate-600', border: 'border-slate-800', hover: '' };
+    return { bg: 'bg-slate-800/40', text: 'text-slate-600', border: 'border-slate-800', hover: 'hover:bg-slate-700/40' };
   }
   if (entry.type === 'RERRP36') {
     return { bg: 'bg-emerald-900/60', text: 'text-emerald-200', border: 'border-emerald-700', hover: 'hover:bg-emerald-800/70' };
@@ -42,46 +42,47 @@ function routeSummary(entry) {
 // ─── individual cell ──────────────────────────────────────────────────────────
 function CalendarCell({ day, entry, today, onClick }) {
   const { bg, text, border, hover } = getCellColor(entry);
-  const hasEntry = entry && entry.type !== 'OFF';
-  const isClickable = hasEntry;
-  const route = routeSummary(entry);
+  const hasContent  = entry && entry.type !== 'OFF';
+  const isEdited    = entry?.editedManually;
+  const route       = routeSummary(entry);
+
+  // Yellow border overrides type color for manually edited cells
+  const borderClass = isEdited ? 'border-yellow-500/70' : border;
 
   const badges = [];
-  if (entry?.nightDuty)      badges.push({ icon: '🌙', title: 'Night duty' });
-  if (entry?.earlyStart)     badges.push({ icon: '⚡', title: 'Early start' });
-  if (entry?.lateFinish)     badges.push({ icon: '🌅', title: 'Late finish' });
-  if (entry?._ftlViolation)  badges.push({ icon: '⛔', title: 'FTL violation' });
+  if (entry?.nightDuty)        badges.push({ icon: '🌙', title: 'Night duty' });
+  if (entry?.earlyStart)       badges.push({ icon: '⚡', title: 'Early start' });
+  if (entry?.lateFinish)       badges.push({ icon: '🌅', title: 'Late finish' });
+  if (entry?._ftlViolation)    badges.push({ icon: '⛔', title: 'FTL violation' });
   else if (entry?._ftlWarning) badges.push({ icon: '⚠', title: 'FTL warning' });
 
   return (
     <div
       className={`
-        relative min-h-20 rounded border p-1.5 select-none
-        ${bg} ${border} ${isClickable ? `${hover} cursor-pointer` : ''}
+        relative min-h-20 rounded border p-1.5 select-none cursor-pointer
+        ${bg} ${borderClass} ${hover}
         ${today ? 'ring-1 ring-sky-400' : ''}
         transition-colors
       `}
-      onClick={isClickable ? onClick : undefined}
-      title={isClickable ? `${entry.dutyCode || entry.type} — click for details` : undefined}
+      onClick={onClick}
+      title={hasContent ? `${entry.dutyCode || entry.type} — click to edit` : 'Click to add duty'}
     >
-      {/* Day number */}
+      {/* Day number row */}
       <div className={`flex items-start justify-between ${text}`}>
         <span className={`text-xs font-semibold leading-none ${today ? 'text-sky-400' : ''}`}>
           {day}
         </span>
-        {badges.length > 0 && (
-          <span className="text-xs leading-none space-x-0.5">
-            {badges.map((b, i) => (
-              <span key={i} title={b.title}>{b.icon}</span>
-            ))}
-          </span>
-        )}
+        <span className="text-xs leading-none flex items-center gap-0.5">
+          {isEdited && <span title="Manually edited" className="text-yellow-400">✏</span>}
+          {badges.map((b, i) => (
+            <span key={i} title={b.title}>{b.icon}</span>
+          ))}
+        </span>
       </div>
 
-      {/* Content */}
-      {hasEntry && (
+      {/* Entry content */}
+      {hasContent && (
         <div className={`mt-0.5 space-y-0.5 ${text}`}>
-          {/* Duty code */}
           {(entry.dutyCode || entry.type !== 'FLIGHT') && (
             <div className="text-xs font-semibold truncate leading-tight">
               {entry.type === 'CONTINUATION' ? '→ cont.' :
@@ -91,27 +92,24 @@ function CalendarCell({ day, entry, today, onClick }) {
                entry.dutyCode || ''}
             </div>
           )}
-
-          {/* Report time */}
           {entry.report && (
-            <div className="text-xs opacity-80 leading-tight font-mono">
-              {entry.report}
-            </div>
+            <div className="text-xs opacity-80 leading-tight font-mono">{entry.report}</div>
           )}
-
-          {/* Route summary — hide on very small cells */}
           {route && (
-            <div className="text-xs opacity-90 truncate leading-tight hidden sm:block">
-              {route}
-            </div>
+            <div className="text-xs opacity-90 truncate leading-tight hidden sm:block">{route}</div>
           )}
-
-          {/* Block / rest time */}
           {(entry.flightTime || entry.restTime || entry.dutyTime) && (
             <div className="text-xs opacity-70 leading-tight font-mono">
               {entry.flightTime || entry.restTime || entry.dutyTime}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Empty day hint on hover */}
+      {!hasContent && (
+        <div className="absolute inset-x-0 bottom-1 flex justify-center opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+          <span className="text-slate-600 text-xs">+</span>
         </div>
       )}
     </div>
@@ -179,9 +177,9 @@ export default function CalendarGrid({ entries = [], year, month, onDayClick }) 
             <CalendarCell
               key={cell.key}
               day={cell.day}
-              entry={entryByDay[cell.day] || null}
+              entry={entryByDay[cell.day] ?? null}
               today={isToday(cell.day)}
-              onClick={() => onDayClick(entryByDay[cell.day], cell.day)}
+              onClick={() => onDayClick(entryByDay[cell.day] ?? null, cell.day)}
             />
           )
         )}
