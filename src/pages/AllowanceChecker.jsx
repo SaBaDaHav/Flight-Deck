@@ -809,7 +809,13 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       )}
 
       {/* Pay breakdown */}
-      <PayBreakdown monthlyResult={monthlyResult} rates={rates} stats={stats} />
+      <PayBreakdown
+        monthlyResult={monthlyResult}
+        rates={rates}
+        stats={stats}
+        workMonth={month}
+        workYear={year}
+      />
     </div>
   );
 }

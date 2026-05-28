@@ -22,7 +22,12 @@ function LineRow({ line, isDeduction = false }) {
   );
 }
 
-export default function PayBreakdown({ monthlyResult, rates, stats }) {
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+
+export default function PayBreakdown({ monthlyResult, rates, stats, workMonth, workYear }) {
   if (!monthlyResult) {
     return (
       <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-slate-500 text-sm">
@@ -30,6 +35,9 @@ export default function PayBreakdown({ monthlyResult, rates, stats }) {
       </div>
     );
   }
+
+  const payMonth = workMonth === 12 ? 1 : workMonth + 1;
+  const payYear  = workMonth === 12 ? workYear + 1 : workYear;
 
   const payslip = buildPayslipLines(monthlyResult);
   const { incomeLines, deductionLines, totalIncome, totalDeductions, netPay } = payslip;
@@ -45,6 +53,13 @@ export default function PayBreakdown({ monthlyResult, rates, stats }) {
       <h3 className="text-sm font-semibold text-sky-400 uppercase tracking-wider mb-3">
         Pay Breakdown
       </h3>
+
+      {workMonth && workYear && (
+        <div className="bg-slate-700/40 border border-slate-600 rounded-lg px-3 py-2 text-xs text-slate-400 mb-3">
+          Work month: {MONTH_NAMES[workMonth - 1]} {workYear} → Payment month:{' '}
+          <span className="text-sky-300">{MONTH_NAMES[payMonth - 1]} {payYear}</span>
+        </div>
+      )}
 
       {/* Stats summary */}
       {stats && (
