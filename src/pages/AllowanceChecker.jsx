@@ -344,14 +344,11 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     // Read from storage first; fall back to calEntries prop if same month
     const storageKey = `flight-deck:roster:${year}-${String(month).padStart(2, '0')}`;
     const stored = loadRoster(year, month);
-    console.log(`[Sync] Storage key "${storageKey}":`, stored ? `${stored.entries?.length ?? 0} entries` : 'null');
-
     let entries = stored?.entries;
     let source = 'storage';
     if ((!entries || entries.length === 0) && calYear === year && calMonth === month) {
       entries = calEntries;
       source = 'calEntries';
-      console.log('[Sync] Falling back to calEntries:', calEntries.length, 'entries');
     }
     if (!entries || entries.length === 0) {
       setSyncSummary(
@@ -360,11 +357,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       );
       return;
     }
-    console.log(`[Sync] Using ${entries.length} entries from ${source}. Types:`,
-      [...new Set(entries.map(e => e.type))],
-      '| Sample dates:', entries.slice(0, 3).map(e => e.date)
-    );
-
     // Build date → entry lookup; skip continuation/comment rows
     const byDate = {};
     for (const e of entries) {
@@ -372,7 +364,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       if (['CONTINUATION', 'COMMENT', 'PROFILE'].includes(e.type)) continue;
       if (!byDate[e.date]) byDate[e.date] = e;
     }
-    console.log(`[Sync] byDate has ${Object.keys(byDate).length} unique dates. Looking for ${year}-${String(month).padStart(2,'0')}-XX`);
 
     let flightCount = 0, groundCount = 0, simCount = 0, trainingCount = 0;
     let totalDomActual = 0, totalInterActual = 0;
@@ -452,7 +443,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         if (!classRoute && entry.route) {
           classRoute = (entry.route || '').replace(/→/gu, '-');
         }
-        console.log(`[Sync D${row.date}] classRoute="${classRoute}" from="${entry.from}" to="${entry.to}" sectors=${entry.sectors?.length ?? 0}`);
 
         // Route DB is most reliable; fall back to stored entry data
         const dbMins    = calcTotalBlockMinsWithLearned(classRoute, learnedRoutes);
@@ -469,12 +459,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           } else {
             domActual = totalMins;
           }
-          console.log(
-            `[Sync D${row.date}] route="${classRoute}" block=${totalMins}min(${dbMins != null ? 'DB' : 'entry'})`,
-            `DOM:${domActual || 0} INT:${interActual || 0}`
-          );
-        } else {
-          console.warn(`[Sync D${row.date}] no block time — classRoute="${classRoute}" flightTime="${entry.flightTime}"`);
         }
       }
 
@@ -497,23 +481,13 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         domActual,
         interActual,
       };
-      if (!firstRowLogged && !isOff && (domActual !== '' || interActual !== '')) {
-        console.log('[Sync first flight row result]', JSON.parse(JSON.stringify(updatedRow)));
-        firstRowLogged = true;
-      }
       return updatedRow;
     });
 
-    console.log('setRows called with', newRows.length, 'rows');
-    const sampleFlight = newRows.find(r => r.domActual !== '' || r.interActual !== '');
-    if (sampleFlight) console.log('[Sync] first updated flight row:', JSON.parse(JSON.stringify(sampleFlight)));
-    else console.warn('[Sync] no rows with domActual/interActual set — check byDate matching');
     saveAllowance(year, month, { rows: newRows });
     setRows(newRows);
 
     const fmtMins = m => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
-    console.log(`[Sync] Done — flights:${flightCount} ground:${groundCount} SIM:${simCount}`,
-      `DOM ACT:${totalDomActual}min INT ACT:${totalInterActual}min`);
     setSyncSummary(
       `Synced from ${source} (${MONTH_NAMES[month - 1]} ${year}): ` +
       `${flightCount} flight${flightCount !== 1 ? 's' : ''}, ` +
