@@ -31,6 +31,8 @@ Full brief: CLAUDE.md in project root (gitignored)
 16. Swap/Giveaway FTL Checker — upload friend's screenshot, auto-detects multi-day swap chain from BKK homebase, full month FTL re-analysis, pay delta calculation
 17. Actual block time entry — per-leg off-block/on-block in EditEntryModal, auto-sums to total, FTL tracking only, not used for pay
 18. RosterAnalyser cumulative bars use actualBlockMins → blockMins → scheduledBlock priority chain
+19. Plain-language FTL explanations in DayModal — warning/violation/rest violation/PSWM descriptions with delay tolerance and commander's discretion info
+20. ESLint — 0 errors 0 warnings maintained throughout
 
 ---
 
