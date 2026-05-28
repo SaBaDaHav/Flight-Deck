@@ -41,7 +41,7 @@ function parsePeriodDate(str) {
   let d = new Date(t);
   if (!isNaN(d.getTime())) return d;
   // Merlot native: "24/Mar/2026" or "24 Mar 2026" or "24-Mar-2026"
-  const m = t.match(/^(\d{1,2})[\/\s-]([A-Za-z]{3})[\/\s-](\d{4})$/);
+  const m = t.match(/^(\d{1,2})[/\s-]([A-Za-z]{3})[/\s-](\d{4})$/u);
   if (m) {
     d = new Date(`${m[2]} ${m[1]}, ${m[3]}`);
     if (!isNaN(d.getTime())) return d;
