@@ -602,6 +602,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         simDays,
       },
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, rates]);
 
   // ─── render ───────────────────────────────────────────────────────────────
