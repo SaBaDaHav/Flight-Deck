@@ -6,7 +6,6 @@ import {
   CUMULATIVE_LIMITS,
   rerrpGapHours,
   countDisruptiveBetween,
-  getFdpLimit,
 } from '../lib/ftl-rules.js';
 import { analyzeSwapFlight } from '../lib/anthropic.js';
 import { calcTotalBlockMinsWithLearned } from '../constants/route-block-times.js';
