@@ -227,12 +227,35 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">TVJ FTL Compliance</p>
               <div className="space-y-2.5">
                 {ftl.fdpLimitMin !== null && (
-                  <FtlBar
-                    label={`FDP used — ${numLegs} leg${numLegs !== 1 ? 's' : ''} (OMA Table 7.1.2)`}
-                    usedMin={ftl.fdpUsedMin}
-                    limitMin={ftl.fdpLimitMin}
-                    status={ftl.fdpStatus}
-                  />
+                  <>
+                    <FtlBar
+                      label={`FDP used — ${numLegs} leg${numLegs !== 1 ? 's' : ''} (OMA Table 7.1.2)`}
+                      usedMin={ftl.fdpUsedMin}
+                      limitMin={ftl.fdpLimitMin}
+                      status={ftl.fdpStatus}
+                    />
+                    {ftl.fdpStatus === 'warning' && ftl.fdpUsedMin != null && ftl.fdpLimitMin != null && (
+                      <div className="text-xs bg-amber-900/20 border border-amber-700/40 rounded px-2 py-1.5 text-amber-300 space-y-0.5">
+                        <p className="font-semibold">⚠ FDP Warning</p>
+                        <p>Used {fmtMin(ftl.fdpUsedMin)} of {fmtMin(ftl.fdpLimitMin)} limit ({Math.round(ftl.fdpUsedMin/ftl.fdpLimitMin*100)}%). Any delay of {fmtMin(ftl.fdpLimitMin - ftl.fdpUsedMin)} or more would exceed the basic FDP limit.</p>
+                        {ftl.fdpLimitExtMin && (
+                          <p>Commander's discretion available up to {fmtMin(ftl.fdpLimitExtMin)} if needed (OMA Table 7.1.3). Post-flight rest must be increased by 4h.</p>
+                        )}
+                      </div>
+                    )}
+                    {ftl.fdpStatus === 'violation' && ftl.fdpUsedMin != null && ftl.fdpLimitMin != null && (
+                      <div className="text-xs bg-red-900/20 border border-red-700/40 rounded px-2 py-1.5 text-red-300 space-y-0.5">
+                        <p className="font-semibold">⛔ FDP Violation</p>
+                        <p>Used {fmtMin(ftl.fdpUsedMin)} exceeds basic limit of {fmtMin(ftl.fdpLimitMin)} by {fmtMin(ftl.fdpUsedMin - ftl.fdpLimitMin)}.</p>
+                        {ftl.fdpLimitExtMin && ftl.fdpUsedMin <= ftl.fdpLimitExtMin && (
+                          <p>Within commander's discretion limit of {fmtMin(ftl.fdpLimitExtMin)} — discretion must be declared and logged (OMA §7.2.1).</p>
+                        )}
+                        {ftl.fdpLimitExtMin && ftl.fdpUsedMin > ftl.fdpLimitExtMin && (
+                          <p>Also exceeds commander's discretion limit of {fmtMin(ftl.fdpLimitExtMin)}. Reportable to CAAT within 28 days.</p>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
                 {restBefore !== null && minRestBefore !== null && (
                   <FtlBar
@@ -251,8 +274,15 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
                 </div>
 
                 {ftl.pswmRequired && (
-                  <div className="text-xs bg-amber-900/30 border border-amber-700/50 rounded px-2 py-1.5 text-amber-300">
-                    PSWM form required — night / early / late duty (OMA §7.1.12)
+                  <div className="text-xs bg-amber-900/30 border border-amber-700/50 rounded px-2 py-1.5 text-amber-300 space-y-0.5">
+                    <p className="font-semibold">📋 PSWM Form Required (OMA §7.1.12)</p>
+                    <p>
+                      {nightDuty    && 'Night duty — FDP encroaches 02:00–04:59 (WOCL). '}
+                      {earlyStart   && 'Early start — report time 05:00–05:59. '}
+                      {lateFinish   && 'Late finish — duty ends 23:00–01:59. '}
+                      Prior Sleep Wake Model form must be completed before operating.
+                      {nightDuty && ' Maximum 4 sectors on night duty.'}
+                    </p>
                   </div>
                 )}
 
@@ -269,8 +299,9 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
                 ))}
 
                 {entry._restViolation && (
-                  <div className="text-xs bg-red-900/30 border border-red-700/50 rounded px-2 py-1.5 text-red-300">
-                    ⛔ Minimum rest not met (ORO.FTL.235)
+                  <div className="text-xs bg-red-900/30 border border-red-700/50 rounded px-2 py-1.5 text-red-300 space-y-0.5">
+                    <p className="font-semibold">⛔ Minimum Rest Violation (ORO.FTL.235)</p>
+                    <p>Rest before this duty was {fmtMin(restBefore)}, required minimum is {fmtMin(minRestBefore)}. Short by {fmtMin(minRestBefore - restBefore)}.</p>
                   </div>
                 )}
               </div>
