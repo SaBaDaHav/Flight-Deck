@@ -686,6 +686,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
                 <th className="px-1 py-2 text-center w-16" title="Your actual DOM block minutes">DOM Act</th>
                 <th className="px-1 py-2 text-center w-16" title="INTER block minutes from HR sheet">INT HR</th>
                 <th className="px-1 py-2 text-center w-16" title="Your actual INTER block minutes">INT Act</th>
+                <th className="px-1 py-2 text-center w-16" title="Total block minutes">Total</th>
                 <th className="px-1 py-2 text-center w-12">Legs</th>
                 <th className="px-1 py-2 text-center w-20">Per Diem</th>
                 <th className="px-1 py-2 text-center w-16">Code</th>
@@ -721,6 +722,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
                 </td>
                 <td className="px-1 py-2 text-right text-sky-300 font-mono">
                   {totals.totalInterEff !== totals.totalInterSched ? totals.totalInterEff : '—'}
+                </td>
+                <td className="px-1 py-2 text-right text-emerald-300 font-mono font-bold" title="Total block minutes (DOM + INTER)">
+                  {(totals.totalDomEff + totals.totalInterEff) || '—'}
                 </td>
                 <td className="px-1 py-2 text-right text-white font-mono">
                   {totals.totalLegs || '—'}
