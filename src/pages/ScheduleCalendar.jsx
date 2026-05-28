@@ -351,10 +351,19 @@ export default function ScheduleCalendar({
       const targetMonth = dominant ? parseInt(dominant.slice(5, 7),  10) : month;
 
       // Collect FLIGHT legs missing from both route DB and learned routes
+      // entries have no .route field — reconstruct from sectors or from/to
       const missingLegs = new Set();
       for (const e of entries) {
-        if (e.type === 'FLIGHT' && e.blockMins === null && e.route) {
-          for (const leg of findMissingLegs(e.route, learnedRoutes)) missingLegs.add(leg);
+        if (e.type === 'FLIGHT' && e.blockMins === null) {
+          let routeStr = '';
+          if (e.sectors?.length > 0) {
+            routeStr = [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-');
+          } else if (e.from && e.to) {
+            routeStr = `${e.from}-${e.to}`;
+          }
+          if (routeStr) {
+            for (const leg of findMissingLegs(routeStr, learnedRoutes)) missingLegs.add(leg);
+          }
         }
       }
       if (missingLegs.size > 0) {
