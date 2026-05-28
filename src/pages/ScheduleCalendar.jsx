@@ -274,12 +274,12 @@ export default function ScheduleCalendar({
         flightEntries.map(e => `${e.date}=${e.blockMins ?? 'null('+e.flightTime+')'}`));
       setEntries(enrichEntries(backfilled));
       setTotals(stored.totals || null);
-      setLoadError(null);
     } else {
       setEntries([]);
       setTotals(null);
-      setLoadError(null);
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadError(null);
   }, [year, month]);
 
   const navigateMonth = (delta) => {
