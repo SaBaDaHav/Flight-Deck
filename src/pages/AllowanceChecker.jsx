@@ -342,7 +342,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
   const syncFromCalendar = useCallback(() => {
     // Read from storage first; fall back to calEntries prop if same month
-    const storageKey = `flight-deck:roster:${year}-${String(month).padStart(2, '0')}`;
     const stored = loadRoster(year, month);
     let entries = stored?.entries;
     let source = 'storage';
@@ -367,7 +366,6 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
 
     let flightCount = 0, groundCount = 0, simCount = 0, trainingCount = 0;
     let totalDomActual = 0, totalInterActual = 0;
-    let firstRowLogged = false;
     const monthStr = String(month).padStart(2, '0');
     const learnedRoutes = loadLearnedRoutes();
 
