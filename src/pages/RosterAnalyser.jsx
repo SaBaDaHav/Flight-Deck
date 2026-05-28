@@ -67,8 +67,12 @@ function enrichEntries(entries) {
       _restViolation:   restViolation,
       _ftlViolation:    ftl.fdpStatus === 'violation' || restViolation,
       _ftlWarning:      ftl.fdpStatus === 'warning',
-      _dutyMin:         parseHhmm(entry.dutyTime),
-      _flightMin:       parseHhmm(entry.flightTime),
+      // dutyTime null for mobile entries — fall back to FDP used from FTL analysis
+      _dutyMin:         parseHhmm(entry.dutyTime) || ftl.fdpUsedMin || 0,
+      // flightTime null for mobile — use blockMins (route DB lookup) or scheduledBlock
+      _flightMin:       entry.blockMins != null
+                          ? entry.blockMins
+                          : parseHhmm(entry.flightTime || entry.scheduledBlock || ''),
       _prevEntry:       prev,
     };
   });
