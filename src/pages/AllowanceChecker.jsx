@@ -725,8 +725,8 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         </div>
       </div>
 
-      {/* Discrepancy panel */}
-      {discrepancies.length > 0 && (
+      {/* Discrepancy panel — only show when HR scheduled values have been entered */}
+      {discrepancies.length > 0 && (totals.totalDomSched > 0 || totals.totalInterSched > 0) && (
         <div className="bg-slate-800 border border-amber-500/40 rounded-lg p-4">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-amber-400 font-bold">
