@@ -194,6 +194,38 @@ function RerrpRow({ curr, prev, allEntries }) {
   );
 }
 
+function loadAllMonthsBlock(year) {
+  const months = [];
+  let totalActual = 0;
+  let totalScheduled = 0;
+  for (let m = 1; m <= 12; m++) {
+    const stored = loadRoster(year, m);
+    if (!stored?.entries?.length) {
+      months.push({ month: m, actualMins: null, scheduledMins: null, hasData: false });
+      continue;
+    }
+    const flights = stored.entries.filter(e => e.type === 'FLIGHT');
+    let actualMins = 0, scheduledMins = 0, hasActual = false;
+    for (const e of flights) {
+      if (e.actualBlockMins != null) {
+        actualMins += e.actualBlockMins;
+        hasActual = true;
+      } else if (e.blockMins != null) {
+        actualMins += e.blockMins;
+      } else {
+        const h = e.flightTime ? parseInt(e.flightTime.split(':')[0]) * 60 + parseInt(e.flightTime.split(':')[1] || 0) : 0;
+        actualMins += h;
+      }
+      const s = e.blockMins ?? (e.flightTime ? parseInt(e.flightTime.split(':')[0]) * 60 + parseInt((e.flightTime.split(':')[1]) || 0) : 0);
+      scheduledMins += s;
+    }
+    totalActual += actualMins;
+    totalScheduled += scheduledMins;
+    months.push({ month: m, actualMins, scheduledMins, hasActual, hasData: true });
+  }
+  return { months, totalActual, totalScheduled };
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function RosterAnalyser() {
@@ -248,6 +280,8 @@ export default function RosterAnalyser() {
       monthFlight:  enriched.reduce((a, e) => a + (e._flightMin || 0), 0),
     };
   }, [enriched]);
+
+  const annualBlock = useMemo(() => loadAllMonthsBlock(year), [year]);
 
   function calcFlightPay(route, numLegs) {
     const learnedRoutes = loadLearnedRoutes();
@@ -515,6 +549,68 @@ export default function RosterAnalyser() {
                 </div>
               </div>
             )}
+
+            {/* ── Annual block hours (Logbook) ──────────────────────── */}
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">
+                Annual Block Hours — {year}
+                <span className="normal-case font-normal text-slate-600 ml-2">
+                  (logbook · 1,000h regulatory limit)
+                </span>
+              </p>
+              <div className="bg-slate-800/60 border border-slate-700/40 rounded-xl px-4 py-4 space-y-3">
+                {/* Year total bar */}
+                <FtlBar
+                  label={`${year} total block`}
+                  usedMin={annualBlock.totalActual}
+                  limitMin={60000}
+                  status={
+                    annualBlock.totalActual > 60000 ? 'violation' :
+                    annualBlock.totalActual > 54000 ? 'warning' : 'ok'
+                  }
+                />
+
+                {/* Month by month breakdown */}
+                <div className="pt-2 border-t border-slate-700/50 space-y-1">
+                  {annualBlock.months.map(({ month: m, actualMins, hasActual, hasData }) => {
+                    const pct = actualMins ? Math.min(100, actualMins / 600) : 0;
+                    return (
+                      <div key={m} className="flex items-center gap-2 text-xs">
+                        <span className="text-slate-500 w-8 shrink-0">{MONTH_NAMES[m - 1]}</span>
+                        {hasData ? (
+                          <>
+                            <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${hasActual ? 'bg-amber-400' : 'bg-sky-600'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className={`font-mono w-12 text-right ${hasActual ? 'text-amber-300' : 'text-slate-400'}`}>
+                              {fmtMin(actualMins)}
+                            </span>
+                            {hasActual && <span className="text-amber-600 text-xs">✏</span>}
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex-1 h-1.5 bg-slate-700/30 rounded-full" />
+                            <span className="font-mono w-12 text-right text-slate-700">—</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Legend */}
+                <div className="flex gap-4 text-xs text-slate-600 pt-1 border-t border-slate-700/30">
+                  <span><span className="text-amber-400">■</span> Actual (logbook uploaded)</span>
+                  <span><span className="text-sky-600">■</span> Scheduled (route DB)</span>
+                  <span className="ml-auto font-mono text-slate-500">
+                    Total: {fmtMin(annualBlock.totalActual)} / 1,000:00
+                  </span>
+                </div>
+              </div>
+            </div>
 
             {/* ── RERRP analysis ────────────────────────────────────────── */}
             <div>
