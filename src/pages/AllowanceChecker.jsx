@@ -139,7 +139,9 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
 
   const set = useCallback(field => val => onUpdate(row.date, field, val), [row.date, onUpdate]);
 
-  const deltaThb = deltaToThb(domDelta, interDelta, rates).total;
+  // Only show delta when HR scheduled values have been entered
+  const hasHrScheduled = row.domScheduled !== '' || row.interScheduled !== '';
+  const deltaThb = hasHrScheduled ? deltaToThb(domDelta, interDelta, rates).total : 0;
 
   return (
     <tr className={`relative border-b border-slate-700/40 ${
