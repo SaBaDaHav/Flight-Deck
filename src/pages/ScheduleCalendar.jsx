@@ -248,6 +248,9 @@ export default function ScheduleCalendar({
   const [routeInputs,      setRouteInputs]      = useState({}); // { 'PKX-BKK': '285' }
   const fileInputRef     = useRef(null);
   const mobileInputRef   = useRef(null);
+  const logbookInputRef  = useRef(null);
+  const [logbookLoading, setLogbookLoading] = useState(false);
+  const [logbookInfo,    setLogbookInfo]    = useState(null);
 
   // Load stored roster when month/year changes — backfill blockMins from route DB for any entry missing it
   useEffect(() => {
@@ -487,6 +490,92 @@ export default function ScheduleCalendar({
     setRouteInputs({});
   }, [pendingRouteSave, routeInputs, finalizeRoster]);
 
+  const processLogbookFiles = useCallback(async (files) => {
+    if (!files || files.length === 0) return;
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setLoadError('Please upload image files (PNG, JPG, JPEG, WEBP).');
+      return;
+    }
+    setLogbookLoading(true);
+    setLoadError(null);
+    setLogbookInfo(null);
+    try {
+      const base64s  = await Promise.all(imageFiles.map(fileToBase64));
+      const results  = await Promise.all(base64s.map(b64 => analyzeRosterImage(b64)));
+      const merged   = results.length === 1 ? results[0] : mergeRosterResults(results);
+      if (!merged?.entries) throw new Error('No entries found in roster image.');
+
+      // Determine target month from dominant entries
+      const dominant = dominantMonth(merged.entries);
+      if (!dominant) throw new Error('Could not determine roster month.');
+      const targetYear  = parseInt(dominant.slice(0, 4), 10);
+      const targetMonth = parseInt(dominant.slice(5, 7), 10);
+
+      // Load existing stored roster for that month
+      const stored = loadRoster(targetYear, targetMonth);
+      if (!stored?.entries?.length) {
+        // No existing roster — save full roster as new with actualBlockMins set from flightTime
+        const rawEntries = merged.entries.filter(e => isValidDate(e.date)).map(e => ({
+          ...e,
+          actualBlockMins: e.type === 'FLIGHT' && e.flightTime
+            ? parseHhmm(e.flightTime) : null,
+          actualLegs: null,
+        }));
+        saveRoster(targetYear, targetMonth, {
+          entries: rawEntries,
+          totals: merged.totals,
+          crew: merged.crew,
+        });
+        setLogbookInfo({
+          year: targetYear, month: targetMonth,
+          updated: rawEntries.filter(e => e.actualBlockMins).length,
+          created: true,
+        });
+        return;
+      }
+
+      // Existing roster found — only update actualBlockMins from flightTime
+      // Never overwrite schedule, route, report, release, sectors etc.
+      const byDate = {};
+      for (const e of merged.entries) {
+        if (isValidDate(e.date) && e.type === 'FLIGHT' && e.flightTime) {
+          byDate[e.date] = parseHhmm(e.flightTime);
+        }
+      }
+
+      let updatedCount = 0;
+      const updatedEntries = stored.entries.map(e => {
+        if (e.type !== 'FLIGHT') return e;
+        const actualMins = byDate[e.date];
+        if (actualMins == null) return e;
+        updatedCount++;
+        return { ...e, actualBlockMins: actualMins };
+      });
+
+      saveRoster(targetYear, targetMonth, {
+        entries: updatedEntries,
+        totals: stored.totals,
+        crew: stored.crew,
+      });
+
+      // If this is the currently displayed month, refresh entries
+      if (targetYear === year && targetMonth === month) {
+        setEntries(enrichEntries(updatedEntries));
+      }
+
+      setLogbookInfo({
+        year: targetYear, month: targetMonth,
+        updated: updatedCount, created: false,
+      });
+    } catch (err) {
+      setLoadError(err.message || 'Failed to process logbook upload.');
+    } finally {
+      setLogbookLoading(false);
+      if (logbookInputRef.current) logbookInputRef.current.value = '';
+    }
+  }, [year, month]);
+
   // ─── drag-and-drop ────────────────────────────────────────────────────────
 
   const handleDrop = useCallback((e) => {
@@ -705,8 +794,24 @@ export default function ScheduleCalendar({
           >
             {isLoading ? 'Analyzing…' : 'Mobile List'}
           </button>
+          <button
+            onClick={() => logbookInputRef.current?.click()}
+            disabled={logbookLoading || isLoading}
+            className="text-sm px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            title="Upload past month Merlot roster — reads actual Flight Time column for logbook/FTL accumulation only"
+          >
+            {logbookLoading ? 'Reading…' : 'Logbook'}
+          </button>
           <input ref={fileInputRef}   type="file" accept="image/*" multiple className="hidden" onChange={e => processFiles(e.target.files)} />
           <input ref={mobileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={e => processMobileFiles(e.target.files)} />
+          <input
+            ref={logbookInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={e => processLogbookFiles(e.target.files)}
+          />
         </div>
       </div>
 
@@ -926,6 +1031,14 @@ export default function ScheduleCalendar({
             ) : (
               <p className="text-center text-xs text-slate-600">
                 Drop a new Merlot image anywhere to update · multiple images merge automatically
+              </p>
+            )}
+
+            {logbookInfo && (
+              <p className="text-center text-xs text-amber-400">
+                Logbook updated — {logbookInfo.updated} actual block times saved for{' '}
+                {MONTH_NAMES[logbookInfo.month - 1]} {logbookInfo.year}
+                {logbookInfo.created ? ' (new month created)' : ''}
               </p>
             )}
           </>
