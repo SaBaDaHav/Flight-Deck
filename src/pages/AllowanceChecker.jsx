@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'; /* eslint-disable react-hooks/set-state-in-effect */
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; /* eslint-disable react-hooks/set-state-in-effect */
 import {
   calcDayPay, calcMonthlyPay, fmtThb, deltaToThb,
 } from '../lib/pay-calculator.js';
@@ -311,6 +311,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
   const [showRates,    setShowRates]    = useState(false);
   const [isDirty,      setIsDirty]      = useState(false);
   const [syncSummary,  setSyncSummary]  = useState('');
+  const hrSheetInputRef = useRef(null);
+  const [hrLoading, setHrLoading] = useState(false);
+  const [hrError,   setHrError]   = useState(null);
 
   // Reload from storage when month/year changes
   useEffect(() => {
@@ -511,6 +514,50 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     setIsDirty(true);
   }, [calEntries, calYear, calMonth, year, month, rows]);
 
+  const handleHrSheetUpload = useCallback(async (files) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    setHrLoading(true);
+    setHrError(null);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const { analyzeHrSheet } = await import('../lib/anthropic.js');
+      const hrRows = await analyzeHrSheet(base64, file.type);
+      if (!hrRows || hrRows.length === 0) throw new Error('No data found in HR sheet.');
+
+      // Map HR rows into allowance rows by date
+      setRows(prev => {
+        const newRows = prev.map(row => {
+          const hrRow = hrRows.find(r => r.date === row.date);
+          if (!hrRow) return row;
+          return {
+            ...row,
+            domScheduled:   hrRow.domMins   > 0 ? String(hrRow.domMins)   : row.domScheduled,
+            interScheduled: hrRow.interMins > 0 ? String(hrRow.interMins) : row.interScheduled,
+            legs:           hrRow.legs      > 0 ? String(hrRow.legs)      : row.legs,
+            perDiem:        hrRow.perDiem        ? hrRow.perDiem           : row.perDiem,
+            code:           hrRow.code           ? hrRow.code              : row.code,
+            simCount:       hrRow.sim       > 0 ? '1'                     : row.simCount,
+          };
+        });
+        saveAllowance(year, month, { rows: newRows });
+        return newRows;
+      });
+      setIsDirty(false);
+      setSyncSummary(`HR sheet loaded — ${hrRows.length} rows imported. Check DOM HR / INT HR columns.`);
+    } catch (err) {
+      setHrError(err.message || 'Failed to analyze HR sheet.');
+    } finally {
+      setHrLoading(false);
+      if (hrSheetInputRef.current) hrSheetInputRef.current.value = '';
+    }
+  }, [year, month]);
+
   // ─── derived totals ───────────────────────────────────────────────────────
 
   const { totals, discrepancies, monthlyResult, stats } = useMemo(() => {
@@ -637,6 +684,23 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
             </button>
           )}
 
+          {/* Upload HR sheet */}
+          <button
+            onClick={() => hrSheetInputRef.current?.click()}
+            disabled={hrLoading}
+            className="text-sm px-3 py-1.5 rounded bg-amber-700 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            title="Upload HR allowance sheet image or PDF — auto-fills DOM HR / INT HR scheduled columns"
+          >
+            {hrLoading ? 'Reading…' : 'HR Sheet'}
+          </button>
+          <input
+            ref={hrSheetInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            className="hidden"
+            onChange={e => handleHrSheetUpload(e.target.files)}
+          />
+
           {/* Toggle rates */}
           <button
             onClick={() => setShowRates(v => !v)}
@@ -651,6 +715,12 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
       {syncSummary && (
         <div className="px-3 py-2 bg-emerald-900/30 border border-emerald-700/40 rounded-lg text-xs text-emerald-300">
           {syncSummary}
+        </div>
+      )}
+
+      {hrError && (
+        <div className="px-3 py-2 bg-red-900/30 border border-red-700/40 rounded-lg text-xs text-red-300">
+          HR sheet error: {hrError}
         </div>
       )}
 
