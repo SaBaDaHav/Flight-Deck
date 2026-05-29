@@ -32,7 +32,10 @@ Full brief: CLAUDE.md in project root (gitignored)
 17. Actual block time entry — per-leg off-block/on-block in EditEntryModal, auto-sums to total, FTL tracking only, not used for pay
 18. RosterAnalyser cumulative bars use actualBlockMins → blockMins → scheduledBlock priority chain
 19. Plain-language FTL explanations in DayModal — warning/violation/rest violation/PSWM descriptions with delay tolerance and commander's discretion info
-20. ESLint — 0 errors 0 warnings maintained throughout
+20. HR Sheet upload button — amber button in Allowance tab, AI reads scheduled block minutes into DOM HR / INT HR columns, discrepancy panel auto-appears after upload
+21. Δ THB column hidden until HR scheduled values entered
+22. Discrepancy panel hidden until HR scheduled values entered
+23. ESLint — 0 errors 0 warnings maintained throughout
 
 ---
 
