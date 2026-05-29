@@ -31,11 +31,13 @@ Full brief: CLAUDE.md in project root (gitignored)
 16. Swap/Giveaway FTL Checker — upload friend's screenshot, auto-detects multi-day swap chain from BKK homebase, full month FTL re-analysis, pay delta calculation
 17. Actual block time entry — per-leg off-block/on-block in EditEntryModal, auto-sums to total, FTL tracking only, not used for pay
 18. RosterAnalyser cumulative bars use actualBlockMins → blockMins → scheduledBlock priority chain
-19. Plain-language FTL explanations in DayModal — warning/violation/rest violation/PSWM descriptions with delay tolerance and commander's discretion info
-20. HR Sheet upload button — amber button in Allowance tab, AI reads scheduled block minutes into DOM HR / INT HR columns, discrepancy panel auto-appears after upload
+19. Plain-language FTL explanations in DayModal — warning/violation/rest violation/PSWM descriptions
+20. HR Sheet upload button — amber button in Allowance tab, AI reads scheduled block minutes into DOM HR / INT HR columns
 21. Δ THB column hidden until HR scheduled values entered
 22. Discrepancy panel hidden until HR scheduled values entered
-23. ESLint — 0 errors 0 warnings maintained throughout
+23. Logbook upload — amber button in Calendar tab, reads actual Flight Time from past Merlot rosters, stores as actualBlockMins
+24. Annual block hours view in RosterAnalyser — month-by-month bar chart, 1,000h limit tracking, actual (amber) vs scheduled (blue)
+25. Missing Total column cell in AllowanceRow — was causing column shift showing wrong values in SIM/DayPay
 
 ---
 
@@ -43,8 +45,16 @@ Full brief: CLAUDE.md in project root (gitignored)
 
 1. Duty/TAFB = 0:00 for mobile entries — acceptable (mobile has no duty/TAFB data)
 2. Mobile List uses route DB block times — approximate (TPI-adjusted actuals need Desktop Roster)
-3. RosterAnalyser cumulative limits — 12-month tracking needs cross-month data (not yet implemented)
+3. localStorage only — data exists in one browser only, no backup/export yet
 4. NAS migration pending (Phase 2)
+
+---
+
+## Next Session Priorities
+
+1. Export/Import JSON — backup all localStorage data, restore on any device (critical before NAS migration)
+2. Tax calibration — add May payslip when it arrives (payment month 6, add to src/lib/tax-calculator.js MONTHLY_DATA)
+3. Phase 2 NAS migration — Synology RS815+, Docker, FastAPI, SQLite
 
 ---
 
@@ -52,19 +62,27 @@ Full brief: CLAUDE.md in project root (gitignored)
 When new payslip arrives, add to src/lib/tax-calculator.js MONTHLY_DATA:
   { paymentMonth: N, income: [monthly income], tax: [monthly ภาษี] }
 Payment month = work month + 1 (e.g. May work → June payment = month 6)
-Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip when available (payment month 6).
+Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip (payment month 6).
 
 ---
 
 ## Actual Block Time Tracking
 - Enter via Calendar tab → click flight cell → Edit duty → Actual block time section
-- Per-leg entry: each sector shows own off-block/on-block fields (e.g. 4-sector day = 4 leg rows)
-- Legs auto-populated from entry sectors; route change rebuilds leg list preserving existing times
-- Each leg shows individual block time; total auto-sums all legs
+- Per-leg entry: each sector shows own off-block/on-block fields
+- OR upload past Merlot roster via Logbook button (amber) — reads Flight Time column as actual
 - Used ONLY for FTL cumulative tracking in Roster Analyser tab
-- Never affects pay calculation (pay always uses blockMins from route DB)
-- RosterAnalyser footer shows "✏ N actual block entries" when real data present
+- Never affects pay calculation
 - Priority chain: actualBlockMins → blockMins (route DB) → scheduledBlock (Merlot)
+
+---
+
+## Logbook Upload Notes
+- Button: Calendar tab → amber "Logbook" button
+- Upload past month Merlot desktop roster screenshots (1 or 2 images)
+- AI reads Flight Time column (= real actual block after flight completion)
+- If month already has roster data → only updates actualBlockMins, preserves schedule
+- If month has no roster data → creates full entry with actualBlockMins set
+- Annual view in RosterAnalyser shows amber bars for months with logbook data
 
 ---
 
@@ -75,7 +93,16 @@ Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip when available (
 - Loads correct month roster even if their flights are in different month than currently viewed
 - Shows: FTL legal/illegal + full month re-analysis + pay breakdown (give away vs take)
 - Homebase = BKK (hardcoded in detectMySwapFlights)
-- TKIX-1 Jun 1 00:25L report violates FTL (1700-0459 band, 11:00 limit, 11:30 used) — correctly detected
+
+---
+
+## localStorage Keys
+- flight-deck:roster:YYYY-MM — monthly roster entries + actualBlockMins
+- flight-deck:allowance:YYYY-MM — allowance checker data
+- flight-deck:rates — pay rates
+- flight-deck:crew-profile — name/rank/ID/base
+- flight-deck:learned-airports — DOM/INTER airport classifications
+- flight-deck:learned-routes — custom block times
 
 ---
 
