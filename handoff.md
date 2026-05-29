@@ -38,6 +38,8 @@ Full brief: CLAUDE.md in project root (gitignored)
 23. Logbook upload — amber button in Calendar tab, reads actual Flight Time from past Merlot rosters, stores as actualBlockMins
 24. Annual block hours view in RosterAnalyser — month-by-month bar chart, 1,000h limit tracking, actual (amber) vs scheduled (blue)
 25. Missing Total column cell in AllowanceRow — was causing column shift showing wrong values in SIM/DayPay
+26. Export/Import backup — ↓ Export / ↑ Import buttons in bottom bar, single JSON file with all localStorage data
+27. iOS import fix — accept filter updated to allow JSON on iPhone via iCloud Drive/Files app
 
 ---
 
@@ -45,15 +47,15 @@ Full brief: CLAUDE.md in project root (gitignored)
 
 1. Duty/TAFB = 0:00 for mobile entries — acceptable (mobile has no duty/TAFB data)
 2. Mobile List uses route DB block times — approximate (TPI-adjusted actuals need Desktop Roster)
-3. localStorage only — data exists in one browser only, no backup/export yet
+3. iOS import — use iCloud Drive (not Google Drive) for file picker to work on iPhone Safari
 4. NAS migration pending (Phase 2)
 
 ---
 
 ## Next Session Priorities
 
-1. Export/Import JSON — backup all localStorage data, restore on any device (critical before NAS migration)
-2. Tax calibration — add May payslip when it arrives (payment month 6, add to src/lib/tax-calculator.js MONTHLY_DATA)
+1. Tax calibration — add May payslip when it arrives (payment month 6, add to src/lib/tax-calculator.js MONTHLY_DATA)
+2. Paste JSON import option — alternative to file picker for iOS Google Drive users
 3. Phase 2 NAS migration — Synology RS815+, Docker, FastAPI, SQLite
 
 ---
@@ -103,6 +105,15 @@ Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip (payment month 6
 - flight-deck:crew-profile — name/rank/ID/base
 - flight-deck:learned-airports — DOM/INTER airport classifications
 - flight-deck:learned-routes — custom block times
+
+---
+
+## Backup / Restore
+- Export: click ↓ Export in bottom bar → downloads flight-deck-backup-YYYY-MM-DD.json → save to Google Drive
+- Import desktop: click ↑ Import → select JSON file from Downloads
+- Import iPhone: save JSON to iCloud Drive → Files app → select from file picker
+- Recommended: export monthly after uploading roster
+- File size: ~500 KB for full year — negligible
 
 ---
 
