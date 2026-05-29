@@ -212,6 +212,17 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
         />
       </td>
 
+      {/* Total block (DOM + INTER effective) */}
+      <td className="px-1 py-1 w-16 text-right">
+        {(() => {
+          const { domEff, interEff } = rowEffective(row);
+          const total = domEff + interEff;
+          return total > 0
+            ? <span className="text-xs text-emerald-300 font-mono">{total}</span>
+            : <span className="text-xs text-slate-700">—</span>;
+        })()}
+      </td>
+
       {/* Legs */}
       <td className="px-1 py-0.5 w-12">
         <TableInput
