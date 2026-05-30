@@ -76,30 +76,44 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     }
   }, [type, route]);
 
+  function parseTimeToMins(str) {
+    if (!str) return null;
+    const digits = str.replace(/\D/g, '');
+    if (digits.length === 4) {
+      const h = parseInt(digits.slice(0, 2), 10);
+      const m = parseInt(digits.slice(2, 4), 10);
+      if (h > 23 || m > 59) return null;
+      return h * 60 + m;
+    }
+    if (str.includes(':')) {
+      const [h, m] = str.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return null;
+      return h * 60 + m;
+    }
+    return null;
+  }
+
   const actualBlockMins = useMemo(() => {
     if (!actualLegs.length) return null;
     let total = 0;
     for (const leg of actualLegs) {
-      if (!leg.offBlock || !leg.onBlock) { continue; }
-      try {
-        const [oh, om] = leg.offBlock.split(':').map(Number);
-        const [nh, nm] = leg.onBlock.split(':').map(Number);
-        let diff = (nh * 60 + nm) - (oh * 60 + om);
-        if (diff < 0) diff += 1440;
-        total += diff;
-      } catch { /* skip invalid leg */ }
+      const offMins = parseTimeToMins(leg.offBlock);
+      const onMins  = parseTimeToMins(leg.onBlock);
+      if (offMins === null || onMins === null) continue;
+      let diff = onMins - offMins;
+      if (diff < 0) diff += 1440;
+      total += diff;
     }
     return total > 0 ? total : null;
   }, [actualLegs]);
 
   function formatTimeInput(value) {
-    // Strip everything except digits
-    const digits = value.replace(/\D/g, '');
-    if (digits.length === 0) return '';
-    if (digits.length <= 2) return digits;
-    // Auto-insert colon: 1100 → 11:00, 930 → 09:30
-    if (digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`;
-    if (digits.length >= 4) return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+    // Allow raw digits only while typing, format on completion
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    if (digits.length === 4) {
+      return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+    }
+    // Return raw digits while still typing (don't add colon mid-input)
     return digits;
   }
 
