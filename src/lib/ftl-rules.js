@@ -307,12 +307,17 @@ export function analyzeEntry(entry, prevEntry = null) {
   result.woclEncroached = isWoclEncroached(report, release, releaseNextDay);
   result.pswmRequired   = result.nightDuty || result.earlyStart || result.lateFinish;
 
-  // FDP used
-  if (dutyTime) {
+  // FDP used — prefer duration calculation over dutyTime
+  // dutyTime from Merlot can be TAFB on layover flights (e.g. 40:25 for BKK-NRT)
+  // Only use dutyTime if it's plausible (≤ 20h) and release is not available
+  const durationFromTimes = durationMin(report, release, releaseNextDay);
+  if (durationFromTimes != null) {
+    result.fdpUsedMin = durationFromTimes;
+  } else if (dutyTime) {
     const [h, m] = dutyTime.split(':').map(Number);
-    result.fdpUsedMin = h * 60 + (m || 0);
-  } else {
-    result.fdpUsedMin = durationMin(report, release, releaseNextDay);
+    const dutyMins = h * 60 + (m || 0);
+    // Cap at 20h — anything higher is likely TAFB not FDP
+    result.fdpUsedMin = dutyMins <= 1200 ? dutyMins : null;
   }
 
   // FDP limit
