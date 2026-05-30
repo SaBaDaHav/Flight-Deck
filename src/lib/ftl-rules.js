@@ -1,6 +1,8 @@
 // TVJ FTL rules — OMA Chapter 7, Iss.03/Rev.01, 01 May 2026
 // Regulatory basis: TCAR OPS (mirrors EASA ORO.FTL), approved by CAAT
 
+import { calcFdpMins } from '../constants/airport-timezones.js';
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 // "HH:MM" → total minutes from midnight
@@ -307,16 +309,16 @@ export function analyzeEntry(entry, prevEntry = null) {
   result.woclEncroached = isWoclEncroached(report, release, releaseNextDay);
   result.pswmRequired   = result.nightDuty || result.earlyStart || result.lateFinish;
 
-  // FDP used — prefer duration calculation over dutyTime
-  // dutyTime from Merlot can be TAFB on layover flights (e.g. 40:25 for BKK-NRT)
-  // Only use dutyTime if it's plausible (≤ 20h) and release is not available
-  const durationFromTimes = durationMin(report, release, releaseNextDay);
-  if (durationFromTimes != null) {
-    result.fdpUsedMin = durationFromTimes;
+  // Use timezone-aware FDP calculation when airport data available
+  // Release time at destination must be converted to departure station local time
+  const depAirport = entry.from || 'BKK';
+  const arrAirport = entry.to || entry.from || 'BKK';
+  const tzAwareFdp = calcFdpMins(report, release, releaseNextDay, depAirport, arrAirport);
+  if (tzAwareFdp != null) {
+    result.fdpUsedMin = tzAwareFdp;
   } else if (dutyTime) {
     const [h, m] = dutyTime.split(':').map(Number);
     const dutyMins = h * 60 + (m || 0);
-    // Cap at 20h — anything higher is likely TAFB not FDP
     result.fdpUsedMin = dutyMins <= 1200 ? dutyMins : null;
   }
 
