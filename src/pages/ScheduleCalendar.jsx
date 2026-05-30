@@ -305,13 +305,27 @@ export default function ScheduleCalendar({
       finalCrew = loadCrewProfile() || null;
     }
 
-    const enriched = enrichEntries(rawEntries);
+    // Auto-populate actualBlockMins from flightTime for past months
+    // (past month Merlot rosters have actual block in Flight Time column)
+    const now = new Date();
+    const currentYearMonth = now.getFullYear() * 12 + now.getMonth();
+    const targetYearMonth  = targetYear * 12 + (targetMonth - 1);
+    const isPastMonth = targetYearMonth < currentYearMonth;
+    const processedEntries = isPastMonth ? rawEntries.map(e => {
+      if (e.type !== 'FLIGHT' || e.actualBlockMins != null) return e;
+      const ftMins = e.flightTime
+        ? parseInt(e.flightTime.split(':')[0]) * 60 + parseInt(e.flightTime.split(':')[1] || 0)
+        : null;
+      return ftMins ? { ...e, actualBlockMins: ftMins } : e;
+    }) : rawEntries;
+
+    const enriched = enrichEntries(processedEntries);
     setYear(targetYear);
     setMonth(targetMonth);
     setEntries(enriched);
     setTotals(totals || null);
     if (finalCrew) { setCrewProfile(finalCrew); saveCrewProfile(finalCrew); }
-    saveRoster(targetYear, targetMonth, { entries: rawEntries, totals, crew: finalCrew });
+    saveRoster(targetYear, targetMonth, { entries: processedEntries, totals, crew: finalCrew });
     setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
     setPendingSave(null);
     setUnknownCodes([]);
