@@ -92,8 +92,20 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     return total > 0 ? total : null;
   }, [actualLegs]);
 
+  function formatTimeInput(value) {
+    // Strip everything except digits
+    const digits = value.replace(/\D/g, '');
+    if (digits.length === 0) return '';
+    if (digits.length <= 2) return digits;
+    // Auto-insert colon: 1100 → 11:00, 930 → 09:30
+    if (digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`;
+    if (digits.length >= 4) return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+    return digits;
+  }
+
   function updateLeg(idx, field, value) {
-    setActualLegs(prev => prev.map((leg, i) => i === idx ? { ...leg, [field]: value } : leg));
+    const formatted = formatTimeInput(value);
+    setActualLegs(prev => prev.map((leg, i) => i === idx ? { ...leg, [field]: formatted } : leg));
   }
 
   useEffect(() => {
@@ -357,7 +369,7 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
                 <input
                   type="text"
                   value={report}
-                  onChange={e => setReport(e.target.value)}
+                  onChange={e => setReport(formatTimeInput(e.target.value))}
                   placeholder="00:55"
                   maxLength={5}
                   className="w-full bg-slate-700 border border-slate-500 focus:border-sky-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
@@ -368,7 +380,7 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
                 <input
                   type="text"
                   value={release}
-                  onChange={e => setRelease(e.target.value)}
+                  onChange={e => setRelease(formatTimeInput(e.target.value))}
                   placeholder="10:30"
                   maxLength={5}
                   className="w-full bg-slate-700 border border-slate-500 focus:border-sky-400 focus:outline-none rounded px-3 py-2 text-sm text-white font-mono placeholder-slate-500"
