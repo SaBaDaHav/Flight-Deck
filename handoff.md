@@ -11,7 +11,7 @@ Full brief: CLAUDE.md in project root (gitignored)
 
 ---
 
-## All Fixes & Features This Session
+## All Fixes & Features (Complete Session History)
 
 1. Block time 100:10 → 84:00 — route DB fallback in stats useMemo
 2. 20,000 THB ค่าฝึกอบรม — flat monthly deduction (was multiplied by simDays)
@@ -35,28 +35,38 @@ Full brief: CLAUDE.md in project root (gitignored)
 20. HR Sheet upload button — amber button in Allowance tab, AI reads scheduled block minutes into DOM HR / INT HR columns
 21. Δ THB column hidden until HR scheduled values entered
 22. Discrepancy panel hidden until HR scheduled values entered
-23. Logbook upload — amber button in Calendar tab, reads actual Flight Time from past Merlot rosters, stores as actualBlockMins
-24. Annual block hours view in RosterAnalyser — month-by-month bar chart, 1,000h limit tracking, actual (amber) vs scheduled (blue)
-25. Missing Total column cell in AllowanceRow — was causing column shift showing wrong values in SIM/DayPay
-26. Export/Import backup — ↓ Export / ↑ Import buttons in bottom bar, single JSON file with all localStorage data
-27. iOS import fix — accept filter updated to allow JSON on iPhone via iCloud Drive/Files app
+23. Logbook upload — amber button in Calendar tab, reads actual Flight Time from past Merlot rosters
+24. Annual block hours view in RosterAnalyser — month-by-month bar chart, 1,000h limit tracking
+25. Missing Total column cell in AllowanceRow — was causing column shift
+26. Export/Import backup — ↓ Export / ↑ Import buttons in bottom bar, single JSON file
+27. iOS import fix — accept filter updated for iPhone Safari
+28. Timezone-aware FDP calculation — release time converted from arrival airport local to departure airport local time
+29. Airport timezone DB (src/constants/airport-timezones.js) — all TVJ destinations covered
+30. Auto-detect releaseNextDay — when release < report time, automatically sets true
+31. Desktop Roster auto-populates actualBlockMins for past months from Flight Time column
+32. FTL cap — dutyTime capped at 20h to prevent TAFB being mistaken for FDP
+33. Time input auto-format — type 0225 gets formatted to 02:25 in off/on-block fields
+34. parseTimeToMins handles both HH:MM and raw HHMM formats
 
 ---
 
 ## Known Issues (remaining)
 
 1. Duty/TAFB = 0:00 for mobile entries — acceptable (mobile has no duty/TAFB data)
-2. Mobile List uses route DB block times — approximate (TPI-adjusted actuals need Desktop Roster)
-3. iOS import — use iCloud Drive (not Google Drive) for file picker to work on iPhone Safari
-4. NAS migration pending (Phase 2)
+2. Mobile List block times approximate — TPI-adjusted actuals need Desktop Roster
+3. Continuation row release time — desktop AI doesn't link --> release back to parent FLIGHT entry (release shows — in DayModal for overnight international flights)
+4. iPhone home screen shortcut has no refresh button — use Safari browser for refresh, or add refresh button to app (TODO)
+5. iOS import — use iCloud.com to upload JSON, then Files app → iCloud Drive on iPhone
+6. NAS migration pending (Phase 2)
 
 ---
 
 ## Next Session Priorities
 
-1. Tax calibration — add May payslip when it arrives (payment month 6, add to src/lib/tax-calculator.js MONTHLY_DATA)
-2. Paste JSON import option — alternative to file picker for iOS Google Drive users
-3. Phase 2 NAS migration — Synology RS815+, Docker, FastAPI, SQLite
+1. Add refresh button to app top bar (for iPhone home screen standalone mode)
+2. Tax calibration — add May payslip when it arrives (payment month 6)
+3. Fix continuation row release time parsing — link --> row release back to parent FLIGHT entry
+4. Phase 2 NAS migration
 
 ---
 
@@ -70,50 +80,48 @@ Current data: Jan(1)–Apr(4) calibrated. Next: add May payslip (payment month 6
 
 ## Actual Block Time Tracking
 - Enter via Calendar tab → click flight cell → Edit duty → Actual block time section
-- Per-leg entry: each sector shows own off-block/on-block fields
-- OR upload past Merlot roster via Logbook button (amber) — reads Flight Time column as actual
-- Used ONLY for FTL cumulative tracking in Roster Analyser tab
-- Never affects pay calculation
+- Per-leg entry with auto-format: type 0225 → becomes 02:25
+- OR upload past Merlot roster via Desktop Roster (past months auto-populate actualBlockMins)
+- OR use Logbook button (amber) for explicit logbook upload
+- Used ONLY for FTL cumulative tracking — never affects pay
 - Priority chain: actualBlockMins → blockMins (route DB) → scheduledBlock (Merlot)
+- FFS simulator hours NOT counted toward 1,000h/year limit (EASA ORO.FTL.1)
 
 ---
 
-## Logbook Upload Notes
-- Button: Calendar tab → amber "Logbook" button
-- Upload past month Merlot desktop roster screenshots (1 or 2 images)
-- AI reads Flight Time column (= real actual block after flight completion)
-- If month already has roster data → only updates actualBlockMins, preserves schedule
-- If month has no roster data → creates full entry with actualBlockMins set
-- Annual view in RosterAnalyser shows amber bars for months with logbook data
+## FDP Timezone Calculation
+- File: src/constants/airport-timezones.js
+- All TVJ destinations have UTC offsets defined
+- FDP calculated in departure station local time (EASA requirement)
+- BKK→KIX example: report 00:15 BKK (GMT+7), release 11:32 KIX (GMT+9) = 09:32 BKK → FDP 9:17 ✅
+- releaseNextDay auto-detected when release < report time
 
 ---
 
-## Swap Checker Notes
-- Located in Roster Analyser tab → scroll to bottom
+## Backup / Restore
+- Export: click ↓ Export in bottom bar → downloads JSON → upload to icloud.com
+- Import desktop: click ↑ Import → select JSON
+- Import iPhone: icloud.com → upload JSON → iPhone Files app → iCloud Drive → Import
+- Recommended: export monthly after uploading roster
+
+---
+
+## Swap Checker
+- Roster Analyser tab → scroll to bottom
 - Upload friend's Merlot mobile screenshot
-- Auto-detects multi-day swap chain: finds your BKK departure, follows until return to BKK
-- Loads correct month roster even if their flights are in different month than currently viewed
-- Shows: FTL legal/illegal + full month re-analysis + pay breakdown (give away vs take)
+- Auto-detects multi-day swap: follows BKK departure chain until return to BKK
+- Shows: FTL legal/illegal + full month re-analysis + pay breakdown
 - Homebase = BKK (hardcoded in detectMySwapFlights)
 
 ---
 
 ## localStorage Keys
-- flight-deck:roster:YYYY-MM — monthly roster entries + actualBlockMins
-- flight-deck:allowance:YYYY-MM — allowance checker data
+- flight-deck:roster:YYYY-MM — entries + actualBlockMins
+- flight-deck:allowance:YYYY-MM — allowance checker rows
 - flight-deck:rates — pay rates
 - flight-deck:crew-profile — name/rank/ID/base
-- flight-deck:learned-airports — DOM/INTER airport classifications
+- flight-deck:learned-airports — DOM/INTER classifications
 - flight-deck:learned-routes — custom block times
-
----
-
-## Backup / Restore
-- Export: click ↓ Export in bottom bar → downloads flight-deck-backup-YYYY-MM-DD.json → save to Google Drive
-- Import desktop: click ↑ Import → select JSON file from Downloads
-- Import iPhone: save JSON to iCloud Drive → Files app → select from file picker
-- Recommended: export monthly after uploading roster
-- File size: ~500 KB for full year — negligible
 
 ---
 
