@@ -12,11 +12,11 @@ export const AIRPORT_UTC_OFFSET = {
   'VII': 7, 'HPH': 7, 'UIH': 7, 'BMV': 7, 'DLI': 7,
 
   // Cambodia, Laos, Myanmar
-  'REP': 7, 'PNH': 7, 'VTE': 7, 'LPQ': 7, 'RGN': 6.5,
+  'REP': 7, 'PNH': 7, 'KTI': 7, 'VTE': 7, 'LPQ': 7, 'RGN': 6.5,
 
   // China (GMT+8)
   'PEK': 8, 'PKX': 8, 'PVG': 8, 'CAN': 8, 'NKG': 8, 'HGH': 8,
-  'HFE': 8, 'KHN': 8, 'CSX': 8, 'XUZ': 8, 'WUX': 8, 'TFU': 8,
+  'HFE': 8, 'KHN': 8, 'CSX': 8, 'XUZ': 8, 'WUX': 8, 'TFU': 8, 'XNN': 8,
 
   // Taiwan (GMT+8)
   'TPE': 8, 'KHH': 8,
@@ -34,7 +34,7 @@ export const AIRPORT_UTC_OFFSET = {
   'SIN': 8, 'KUL': 8, 'CGK': 7,
 
   // India, Sri Lanka (GMT+5.5)
-  'DEL': 5.5, 'BOM': 5.5, 'AMD': 5.5, 'CMB': 5.5,
+  'DEL': 5.5, 'BOM': 5.5, 'AMD': 5.5, 'CMB': 5.5, 'CCU': 5.5,
 
   // Middle East (GMT+3/4)
   'DXB': 4, 'DOH': 3, 'MCT': 4, 'KWI': 3, 'BAH': 3,
