@@ -168,6 +168,7 @@ RULES:
 - report: HH:MM — the first time on line 2 (strip the L suffix)
 - release: HH:MM — the last time on line 2 (strip the L suffix)
 - releaseNextDay: true if line 2 shows a second date before the release time
+- IMPORTANT for multi-leg international flights: if the duty departs late night (e.g. 00:00-03:00) and the last arrival is next morning, releaseNextDay should be true even if no explicit second date is shown. Check if release time is earlier than report time — if so, releaseNextDay must be true.
 - releaseDate: the release date as YYYY-MM-DD if different from date; otherwise omit
 
 Return ONLY a valid JSON array — no markdown, no explanation, no code fences.
