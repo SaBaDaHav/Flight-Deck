@@ -146,7 +146,15 @@ function postProcessMobileEntries(rawEntries, selectedYear, learnedRoutes = {}) 
       to,
       report:         e.report || null,
       release:        e.release || null,
-      releaseNextDay: e.releaseNextDay || false,
+      // Auto-detect releaseNextDay: if release time < report time, release is next day
+      releaseNextDay: e.releaseNextDay || (() => {
+        if (!e.report || !e.release) return false;
+        const [rh, rm] = e.report.split(':').map(Number);
+        const [eh, em] = e.release.split(':').map(Number);
+        const reportMins  = (rh || 0) * 60 + (rm || 0);
+        const releaseMins = (eh || 0) * 60 + (em || 0);
+        return releaseMins < reportMins;
+      })(),
       scheduledBlock: flightTime,
       flightTime,
       blockMins,
@@ -445,10 +453,18 @@ export default function ScheduleCalendar({
           }
           if (route) blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes);
         }
+        // Auto-correct releaseNextDay if release < report (catches AI parsing misses)
+        const autoReleaseNextDay = e.releaseNextDay || (() => {
+          if (!e.report || !e.release) return false;
+          const [rh, rm] = e.report.split(':').map(Number);
+          const [eh, em] = e.release.split(':').map(Number);
+          return ((eh || 0) * 60 + (em || 0)) < ((rh || 0) * 60 + (rm || 0));
+        })();
         return {
           ...e,
           blockMins,
           flightTime: e.flightTime ?? e.scheduledBlock ?? null,
+          releaseNextDay: autoReleaseNextDay,
         };
       });
       finalizeRoster(rawEntries, merged.totals, merged.crew, targetYear, targetMonth);
