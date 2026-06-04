@@ -47,6 +47,9 @@ Full brief: CLAUDE.md in project root (gitignored)
 32. FTL cap — dutyTime capped at 20h to prevent TAFB being mistaken for FDP
 33. Time input auto-format — type 0225 gets formatted to 02:25 in off/on-block fields
 34. parseTimeToMins handles both HH:MM and raw HHMM formats
+35. BKK-NST and NST-BKK added to route DB (80 min each)
+36. June 2026 verified with Desktop Roster upload — 93:35 matches Merlot exactly
+37. June roster updated — new flights added vs original (93:35 vs original 84:25)
 
 ---
 
@@ -54,7 +57,7 @@ Full brief: CLAUDE.md in project root (gitignored)
 
 1. Duty/TAFB = 0:00 for mobile entries — acceptable (mobile has no duty/TAFB data)
 2. Mobile List block times approximate — TPI-adjusted actuals need Desktop Roster
-3. Continuation row release time — desktop AI doesn't link --> release back to parent FLIGHT entry (release shows — in DayModal for overnight international flights)
+3. Continuation row release time — desktop AI doesn't link --> release back to parent FLIGHT entry (release shows — in DayModal for overnight international flights). Workaround: manually toggle "Release next day (+1)" in Edit duty modal and enter release time.
 4. iPhone home screen shortcut has no refresh button — use Safari browser for refresh, or add refresh button to app (TODO)
 5. iOS import — use iCloud.com to upload JSON, then Files app → iCloud Drive on iPhone
 6. NAS migration pending (Phase 2)
@@ -63,9 +66,9 @@ Full brief: CLAUDE.md in project root (gitignored)
 
 ## Next Session Priorities
 
-1. Add refresh button to app top bar (for iPhone home screen standalone mode)
-2. Tax calibration — add May payslip when it arrives (payment month 6)
-3. Fix continuation row release time parsing — link --> row release back to parent FLIGHT entry
+1. Add refresh button to app top bar (for iPhone home screen standalone mode) — window.location.reload()
+2. Fix continuation row release time parsing — critical for correct FDP on international overnight flights
+3. Tax calibration — add May payslip when it arrives (payment month 6)
 4. Phase 2 NAS migration
 
 ---
