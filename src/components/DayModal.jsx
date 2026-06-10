@@ -67,10 +67,9 @@ function calcCumulativeFromDate(refDate) {
   const allEntries = [];
   const refD = new Date(refDate);
 
-  // Load previous month and current month only (covers full 28-day window)
-  // Use a Set to track loaded year-month combinations to avoid duplicates
+  // Load previous 2 months and current month to cover 28-day window
   const loaded = new Set();
-  for (let offset = -1; offset <= 0; offset++) {
+  for (let offset = -2; offset <= 0; offset++) {
     let y = refD.getFullYear();
     let m = refD.getMonth() + 1 + offset;
     if (m < 1) { m += 12; y--; }
@@ -88,20 +87,59 @@ function calcCumulativeFromDate(refDate) {
     return (h || 0) * 60 + (m || 0);
   }
 
-  function sumForDays(days, field) {
-    const cutoff = new Date(refD);
-    cutoff.setDate(cutoff.getDate() - days + 1);
-    cutoff.setHours(0, 0, 0, 0);
-    const ref = new Date(refDate);
-    ref.setHours(23, 59, 59, 999);
+  // Build exact datetime for an entry using report time
+  function getReportDatetime(e) {
+    if (!e.report || !e.date) return null;
+    try {
+      const [h, m] = e.report.split(':').map(Number);
+      const dt = new Date(`${e.date}T00:00:00`);
+      dt.setHours(h || 0, m || 0, 0, 0);
+      return dt;
+    } catch { return null; }
+  }
+
+  // Build exact datetime for release
+  function getReleaseDatetime(e) {
+    if (!e.release || !e.date) return null;
+    try {
+      const [h, m] = e.release.split(':').map(Number);
+      const dt = new Date(`${e.date}T00:00:00`);
+      dt.setHours(h || 0, m || 0, 0, 0);
+      if (e.releaseNextDay) dt.setDate(dt.getDate() + 1);
+      return dt;
+    } catch { return null; }
+  }
+
+  // Reference point = release time of the selected entry (or end of day if no release)
+  const refEntry = allEntries.find(e => e.date === refDate && e.type === 'FLIGHT');
+  const refRelease = refEntry ? getReleaseDatetime(refEntry) : null;
+  const refPoint = refRelease || new Date(`${refDate}T23:59:59`);
+
+  function sumForWindow(windowHours, field) {
+    const windowMs = windowHours * 60 * 60 * 1000;
+    const windowStart = new Date(refPoint.getTime() - windowMs);
+
     return allEntries
       .filter(e => {
         if (e.type !== 'FLIGHT') return false;
-        const d = new Date(e.date);
-        return d >= cutoff && d <= ref;
+        // Use report datetime if available, else use date
+        const reportDt = getReportDatetime(e);
+        if (reportDt) {
+          return reportDt >= windowStart && reportDt <= refPoint;
+        }
+        // Fallback for mobile entries without report time
+        const entryDate = new Date(`${e.date}T12:00:00`);
+        return entryDate >= windowStart && entryDate <= refPoint;
       })
       .reduce((acc, e) => {
         if (field === 'duty') {
+          // Use exact duration if report+release available
+          const rep = getReportDatetime(e);
+          const rel = getReleaseDatetime(e);
+          if (rep && rel) {
+            const diffMin = Math.round((rel - rep) / 60000);
+            return acc + (diffMin > 0 ? diffMin : 0);
+          }
           return acc + parseHhmmToMin(e.dutyTime);
         }
         if (field === 'flight') {
@@ -112,10 +150,10 @@ function calcCumulativeFromDate(refDate) {
   }
 
   return {
-    duty7:    sumForDays(7,  'duty'),
-    duty14:   sumForDays(14, 'duty'),
-    duty28:   sumForDays(28, 'duty'),
-    flight28: sumForDays(28, 'flight'),
+    duty7:    sumForWindow(7  * 24, 'duty'),
+    duty14:   sumForWindow(14 * 24, 'duty'),
+    duty28:   sumForWindow(28 * 24, 'duty'),
+    flight28: sumForWindow(28 * 24, 'flight'),
   };
 }
 
