@@ -315,12 +315,14 @@ export default function ScheduleCalendar({
     // Recalculate duty time from report/release for past months
     // More accurate than AI-read dutyTime column
     function recalcDutyTime(entry) {
-      if (!entry.report || !entry.release) return entry;
+      if (!entry.report || !entry.release || entry.release === '-->') return entry;
       const [rh, rm] = entry.report.split(':').map(Number);
       const [eh, em] = entry.release.split(':').map(Number);
+      // Merlot uses release time in local timezone of release station directly
+      // No timezone conversion — just raw time difference
       let diff = (eh * 60 + em) - (rh * 60 + rm);
       if (entry.releaseNextDay || diff < 0) diff += 1440;
-      if (diff <= 0 || diff > 1200) return entry; // sanity check — ignore if > 20h
+      if (diff <= 0 || diff > 1440) return entry; // sanity check — ignore if > 24h
       const h = Math.floor(diff / 60);
       const m = diff % 60;
       return { ...entry, dutyTime: `${h}:${String(m).padStart(2, '0')}` };
