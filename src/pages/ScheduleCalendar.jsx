@@ -311,15 +311,35 @@ export default function ScheduleCalendar({
     const currentYearMonth = now.getFullYear() * 12 + now.getMonth();
     const targetYearMonth  = targetYear * 12 + (targetMonth - 1);
     const isPastMonth = targetYearMonth < currentYearMonth;
-    const processedEntries = isPastMonth ? rawEntries.map(e => {
+
+    // Recalculate duty time from report/release for past months
+    // More accurate than AI-read dutyTime column
+    function recalcDutyTime(entry) {
+      if (!entry.report || !entry.release) return entry;
+      const [rh, rm] = entry.report.split(':').map(Number);
+      const [eh, em] = entry.release.split(':').map(Number);
+      let diff = (eh * 60 + em) - (rh * 60 + rm);
+      if (entry.releaseNextDay || diff < 0) diff += 1440;
+      if (diff <= 0 || diff > 1200) return entry; // sanity check — ignore if > 20h
+      const h = Math.floor(diff / 60);
+      const m = diff % 60;
+      return { ...entry, dutyTime: `${h}:${String(m).padStart(2, '0')}` };
+    }
+
+    const processedEntries = rawEntries.map(e => {
+      // Recalculate duty time from report/release if available
+      return recalcDutyTime(e);
+    });
+
+    const finalEntries = isPastMonth ? processedEntries.map(e => {
       if (e.type !== 'FLIGHT' || e.actualBlockMins != null) return e;
       const ftMins = e.flightTime
         ? parseInt(e.flightTime.split(':')[0]) * 60 + parseInt(e.flightTime.split(':')[1] || 0)
         : null;
       return ftMins ? { ...e, actualBlockMins: ftMins } : e;
-    }) : rawEntries;
+    }) : processedEntries;
 
-    const enriched = enrichEntries(processedEntries);
+    const enriched = enrichEntries(finalEntries);
     setYear(targetYear);
     setMonth(targetMonth);
     setEntries(enriched);
@@ -328,14 +348,14 @@ export default function ScheduleCalendar({
     // CRITICAL: Only save entries that belong to targetYear/targetMonth
     // Never allow entries from other months to overwrite different month's data
     const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-    const safeEntries = processedEntries.filter(e => {
+    const safeEntries = finalEntries.filter(e => {
       if (!e.date) return true; // keep entries without date (profile rows etc)
       return e.date.startsWith(monthStr);
     });
 
     // For entries belonging to other months, save them to their correct month
     // but only if that month doesn't already have data
-    const otherEntries = processedEntries.filter(e => e.date && !e.date.startsWith(monthStr));
+    const otherEntries = finalEntries.filter(e => e.date && !e.date.startsWith(monthStr));
     const otherMonths = [...new Set(otherEntries.map(e => e.date.slice(0, 7)))];
     for (const ym of otherMonths) {
       const [oy, om] = ym.split('-').map(Number);
