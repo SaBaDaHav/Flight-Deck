@@ -67,18 +67,20 @@ function calcCumulativeFromDate(refDate) {
   const allEntries = [];
   const refD = new Date(refDate);
 
-  // Load 2 months back to cover 28-day window
+  // Load previous month and current month only (covers full 28-day window)
+  // Use a Set to track loaded year-month combinations to avoid duplicates
+  const loaded = new Set();
   for (let offset = -1; offset <= 0; offset++) {
     let y = refD.getFullYear();
     let m = refD.getMonth() + 1 + offset;
     if (m < 1) { m += 12; y--; }
     if (m > 12) { m -= 12; y++; }
+    const key = `${y}-${m}`;
+    if (loaded.has(key)) continue;
+    loaded.add(key);
     const stored = loadRoster(y, m);
     if (stored?.entries) allEntries.push(...stored.entries);
   }
-  // Also load current month
-  const stored = loadRoster(refD.getFullYear(), refD.getMonth() + 1);
-  if (stored?.entries) allEntries.push(...stored.entries);
 
   function parseHhmmToMin(str) {
     if (!str) return 0;
