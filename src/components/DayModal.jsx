@@ -92,8 +92,8 @@ function calcCumulativeFromDate(refDate) {
     if (!e.report || !e.date) return null;
     try {
       const [h, m] = e.report.split(':').map(Number);
-      const dt = new Date(`${e.date}T00:00:00`);
-      dt.setHours(h || 0, m || 0, 0, 0);
+      // Use ISO string with no timezone to treat as local time
+      const dt = new Date(`${e.date}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`);
       return dt;
     } catch { return null; }
   }
@@ -103,8 +103,7 @@ function calcCumulativeFromDate(refDate) {
     if (!e.release || !e.date) return null;
     try {
       const [h, m] = e.release.split(':').map(Number);
-      const dt = new Date(`${e.date}T00:00:00`);
-      dt.setHours(h || 0, m || 0, 0, 0);
+      const dt = new Date(`${e.date}T${String(h).padStart(2,'0')}:${String(m||0).padStart(2,'0')}:00`);
       if (e.releaseNextDay) dt.setDate(dt.getDate() + 1);
       return dt;
     } catch { return null; }
@@ -114,6 +113,8 @@ function calcCumulativeFromDate(refDate) {
   const refEntry = allEntries.find(e => e.date === refDate && e.type === 'FLIGHT');
   const refRelease = refEntry ? getReleaseDatetime(refEntry) : null;
   const refPoint = refRelease || new Date(`${refDate}T23:59:59`);
+  // Log for debugging
+  console.log('[Cumul] refPoint:', refPoint.toISOString(), 'local:', refDate, refEntry?.release);
 
   function sumForWindow(windowHours, field) {
     const windowMs = windowHours * 60 * 60 * 1000;
