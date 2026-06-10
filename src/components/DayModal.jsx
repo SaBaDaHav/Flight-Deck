@@ -109,12 +109,9 @@ function calcCumulativeFromDate(refDate) {
     } catch { return null; }
   }
 
-  // Reference point = release time of the selected entry (or end of day if no release)
-  const refEntry = allEntries.find(e => e.date === refDate && e.type === 'FLIGHT');
-  const refRelease = refEntry ? getReleaseDatetime(refEntry) : null;
-  const refPoint = refRelease || new Date(`${refDate}T23:59:59`);
-  // Log for debugging
-  console.log('[Cumul] refPoint:', refPoint.toISOString(), 'local:', refDate, refEntry?.release);
+  // Use end of selected date as refPoint for consistent window calculation
+  // This matches Merlot's "as at date" behavior
+  const refPoint = new Date(`${refDate}T23:59:59`);
 
   function sumForWindow(windowHours, field) {
     const windowMs = windowHours * 60 * 60 * 1000;
