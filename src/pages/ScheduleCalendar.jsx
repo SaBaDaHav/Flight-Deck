@@ -316,16 +316,37 @@ export default function ScheduleCalendar({
     // More accurate than AI-read dutyTime column
     function recalcDutyTime(entry) {
       if (!entry.report || !entry.release || entry.release === '-->') return entry;
-      const [rh, rm] = entry.report.split(':').map(Number);
-      const [eh, em] = entry.release.split(':').map(Number);
-      // Merlot uses release time in local timezone of release station directly
-      // No timezone conversion — just raw time difference
-      let diff = (eh * 60 + em) - (rh * 60 + rm);
-      if (entry.releaseNextDay || diff < 0) diff += 1440;
-      if (diff <= 0 || diff > 1440) return entry; // sanity check — ignore if > 24h
-      const h = Math.floor(diff / 60);
-      const m = diff % 60;
-      return { ...entry, dutyTime: `${h}:${String(m).padStart(2, '0')}` };
+      try {
+        const UTC_OFFSET = {
+          'BKK':7,'DMK':7,'HKT':7,'CNX':7,'HDY':7,'NST':7,'URT':7,'KBV':7,'CEI':7,
+          'UTH':7,'UBP':7,'KKC':7,'SGN':7,'HAN':7,'DAD':7,'CXR':7,'PQC':7,
+          'REP':7,'PNH':7,'KTI':7,'VTE':7,'LPQ':7,'RGN':6.5,
+          'PKX':8,'PEK':8,'PVG':8,'CAN':8,'HGH':8,'TFU':8,'XNN':8,
+          'TPE':8,'KHH':8,'HKG':8,'MFM':8,'SIN':8,'KUL':8,
+          'NRT':9,'HND':9,'KIX':9,'NGO':9,'FUK':9,'CTS':9,'OKA':9,
+          'ICN':9,'GMP':9,
+          'DEL':5.5,'BOM':5.5,'AMD':5.5,'CMB':5.5,'CCU':5.5,
+        };
+        const depOffset = UTC_OFFSET[entry.from] ?? 7;
+        const arrOffset = UTC_OFFSET[entry.to || entry.from] ?? 7;
+
+        const [rh, rm] = entry.report.split(':').map(Number);
+        const [eh, em] = entry.release.split(':').map(Number);
+
+        const reportUtc = (rh * 60 + rm) - depOffset * 60;
+        let releaseUtc = (eh * 60 + em) - arrOffset * 60;
+        if (entry.releaseNextDay) releaseUtc += 1440;
+
+        let diff = releaseUtc - reportUtc;
+        if (diff < 0) diff += 1440;
+        if (diff <= 0 || diff > 1440) return entry;
+
+        const h = Math.floor(diff / 60);
+        const m = diff % 60;
+        return { ...entry, dutyTime: `${h}:${String(m).padStart(2, '0')}` };
+      } catch {
+        return entry;
+      }
     }
 
     const processedEntries = rawEntries.map(e => {
