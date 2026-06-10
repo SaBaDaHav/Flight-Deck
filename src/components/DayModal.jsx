@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
-import { analyzeEntry, durationMin, getMinRest } from '../lib/ftl-rules.js';
+import { analyzeEntry, durationMin, getMinRest, CUMULATIVE_LIMITS } from '../lib/ftl-rules.js';
+import { loadRoster } from '../lib/storage.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,62 @@ function FlagRow({ label, active, icon }) {
   );
 }
 
+// ─── cumulative limits helper ────────────────────────────────────────────────
+
+function calcCumulativeFromDate(refDate) {
+  const allEntries = [];
+  const refD = new Date(refDate);
+
+  // Load 2 months back to cover 28-day window
+  for (let offset = -1; offset <= 0; offset++) {
+    let y = refD.getFullYear();
+    let m = refD.getMonth() + 1 + offset;
+    if (m < 1) { m += 12; y--; }
+    if (m > 12) { m -= 12; y++; }
+    const stored = loadRoster(y, m);
+    if (stored?.entries) allEntries.push(...stored.entries);
+  }
+  // Also load current month
+  const stored = loadRoster(refD.getFullYear(), refD.getMonth() + 1);
+  if (stored?.entries) allEntries.push(...stored.entries);
+
+  function parseHhmmToMin(str) {
+    if (!str) return 0;
+    const [h, m] = str.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+
+  function sumForDays(days, field) {
+    const cutoff = new Date(refD);
+    cutoff.setDate(cutoff.getDate() - days + 1);
+    cutoff.setHours(0, 0, 0, 0);
+    const ref = new Date(refDate);
+    ref.setHours(23, 59, 59, 999);
+    return allEntries
+      .filter(e => {
+        if (e.type !== 'FLIGHT') return false;
+        const d = new Date(e.date);
+        return d >= cutoff && d <= ref;
+      })
+      .reduce((acc, e) => {
+        if (field === 'duty') {
+          return acc + parseHhmmToMin(e.dutyTime);
+        }
+        if (field === 'flight') {
+          return acc + (e.actualBlockMins ?? e.blockMins ?? parseHhmmToMin(e.flightTime ?? e.scheduledBlock ?? ''));
+        }
+        return acc;
+      }, 0);
+  }
+
+  return {
+    duty7:    sumForDays(7,  'duty'),
+    duty14:   sumForDays(14, 'duty'),
+    duty28:   sumForDays(28, 'duty'),
+    flight28: sumForDays(28, 'flight'),
+  };
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
 export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
@@ -99,6 +156,24 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
     const isHome = !prevEntry.layover;
     return getMinRest(prevDutyMin, isHome);
   }, [entry, prevEntry]);
+
+  const cumulative = useMemo(() => {
+    if (!entry?.date || entry?.type !== 'FLIGHT') return null;
+    return calcCumulativeFromDate(entry.date);
+  }, [entry?.date, entry?.type]);
+
+  function cumulStatus(used, limit) {
+    if (used > limit) return 'violation';
+    if (used > limit * 0.9) return 'warning';
+    return 'ok';
+  }
+
+  function fmtMinLocal(mins) {
+    if (!mins) return '0:00';
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return `${h}:${String(m).padStart(2, '0')}`;
+  }
 
   if (!entry) return null;
 
@@ -303,6 +378,49 @@ export default function DayModal({ entry, prevEntry, nextEntry, onClose }) {
                     <p className="font-semibold">⛔ Minimum Rest Violation (ORO.FTL.235)</p>
                     <p>Rest before this duty was {fmtMin(restBefore)}, required minimum is {fmtMin(minRestBefore)}. Short by {fmtMin(minRestBefore - restBefore)}.</p>
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Cumulative Limits ─────────────────────────────────────── */}
+          {cumulative && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+                Cumulative Limits
+                <span className="normal-case font-normal text-slate-600 ml-1">
+                  (from {date})
+                </span>
+              </p>
+              <div className="space-y-2">
+                <FtlBar
+                  label="Duty — last 7 days"
+                  usedMin={cumulative.duty7}
+                  limitMin={CUMULATIVE_LIMITS.duty7days}
+                  status={cumulStatus(cumulative.duty7, CUMULATIVE_LIMITS.duty7days)}
+                />
+                <FtlBar
+                  label="Duty — last 14 days"
+                  usedMin={cumulative.duty14}
+                  limitMin={CUMULATIVE_LIMITS.duty14days}
+                  status={cumulStatus(cumulative.duty14, CUMULATIVE_LIMITS.duty14days)}
+                />
+                <FtlBar
+                  label="Duty — last 28 days"
+                  usedMin={cumulative.duty28}
+                  limitMin={CUMULATIVE_LIMITS.duty28days}
+                  status={cumulStatus(cumulative.duty28, CUMULATIVE_LIMITS.duty28days)}
+                />
+                <FtlBar
+                  label="Flight time — last 28 days"
+                  usedMin={cumulative.flight28}
+                  limitMin={CUMULATIVE_LIMITS.flight28days}
+                  status={cumulStatus(cumulative.flight28, CUMULATIVE_LIMITS.flight28days)}
+                />
+                {cumulative.duty7 === 0 && cumulative.duty28 === 0 && (
+                  <p className="text-xs text-slate-600 italic">
+                    No duty data — upload Desktop Roster for accurate cumulative totals
+                  </p>
                 )}
               </div>
             </div>
