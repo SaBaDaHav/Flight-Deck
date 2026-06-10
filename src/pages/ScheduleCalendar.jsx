@@ -325,7 +325,30 @@ export default function ScheduleCalendar({
     setEntries(enriched);
     setTotals(totals || null);
     if (finalCrew) { setCrewProfile(finalCrew); saveCrewProfile(finalCrew); }
-    saveRoster(targetYear, targetMonth, { entries: processedEntries, totals, crew: finalCrew });
+    // CRITICAL: Only save entries that belong to targetYear/targetMonth
+    // Never allow entries from other months to overwrite different month's data
+    const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+    const safeEntries = processedEntries.filter(e => {
+      if (!e.date) return true; // keep entries without date (profile rows etc)
+      return e.date.startsWith(monthStr);
+    });
+
+    // For entries belonging to other months, save them to their correct month
+    // but only if that month doesn't already have data
+    const otherEntries = processedEntries.filter(e => e.date && !e.date.startsWith(monthStr));
+    const otherMonths = [...new Set(otherEntries.map(e => e.date.slice(0, 7)))];
+    for (const ym of otherMonths) {
+      const [oy, om] = ym.split('-').map(Number);
+      const existingOther = loadRoster(oy, om);
+      if (!existingOther?.entries?.length) {
+        // No existing data — safe to save
+        const monthEntries = otherEntries.filter(e => e.date.startsWith(ym));
+        saveRoster(oy, om, { entries: monthEntries, totals: null, crew: finalCrew });
+      }
+      // If existing data found — do NOT overwrite
+    }
+
+    saveRoster(targetYear, targetMonth, { entries: safeEntries, totals, crew: finalCrew });
     setSavedInfo({ count: rawEntries.length, year: targetYear, month: targetMonth });
     setPendingSave(null);
     setUnknownCodes([]);
