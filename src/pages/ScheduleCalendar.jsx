@@ -647,7 +647,7 @@ export default function ScheduleCalendar({
       setLogbookLoading(false);
       if (logbookInputRef.current) logbookInputRef.current.value = '';
     }
-  }, [year, month]);
+  }, [year, month, setEntries]);
 
   // ─── drag-and-drop ────────────────────────────────────────────────────────
 
