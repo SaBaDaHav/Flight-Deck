@@ -49,6 +49,28 @@ function parsePeriodDate(str) {
   return null;
 }
 
+// SAFEGUARD: AI sometimes misreads the year in individual date rows
+// (e.g. reads 2020 or 2025 instead of 2026). The crew.period field is
+// far more reliable since it comes from a single clear header line.
+// Force every entry's year to match the year stated in crew.period.
+function correctEntryYears(entries, crewPeriod) {
+  if (!crewPeriod) return entries;
+  // crewPeriod format: "2026-07-01 to 2026-07-07" or similar
+  const match = crewPeriod.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return entries;
+  const correctYear = match[1];
+  return entries.map(e => {
+    if (!e.date) return e;
+    const dateMatch = e.date.match(/^\d{4}-(\d{2}-\d{2})$/);
+    if (!dateMatch) return e;
+    const correctedDate = `${correctYear}-${dateMatch[1]}`;
+    if (correctedDate !== e.date) {
+      console.warn(`[YearFix] Corrected ${e.date} -> ${correctedDate}`);
+    }
+    return { ...e, date: correctedDate };
+  });
+}
+
 // Find the calendar month that contains the most entries — most reliable way
 // to determine which month a Merlot roster belongs to, regardless of period dates.
 function dominantMonth(entries) {
@@ -305,6 +327,9 @@ export default function ScheduleCalendar({
       finalCrew = loadCrewProfile() || null;
     }
 
+    // Apply year safeguard before any further processing
+    rawEntries = correctEntryYears(rawEntries, crew?.period);
+
     // Auto-populate actualBlockMins from flightTime for past months
     // (past month Merlot rosters have actual block in Flight Time column)
     const now = new Date();
@@ -497,6 +522,11 @@ export default function ScheduleCalendar({
       const merged   = results.length === 1 ? results[0] : mergeRosterResults(results);
 
       if (!merged || !merged.entries) throw new Error('No entries found in roster image.');
+
+      // Apply year safeguard before any further processing
+      if (merged.entries && merged.crew?.period) {
+        merged.entries = correctEntryYears(merged.entries, merged.crew.period);
+      }
 
       // Determine target year/month.
       // Strategy 1 (most reliable): dominant month by entry count.
