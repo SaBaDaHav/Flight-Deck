@@ -307,6 +307,14 @@ Return this exact JSON schema:
 }
 \`\`\`
 
+CRITICAL YEAR RULE — READ BEFORE ASSIGNING ANY DATE:
+The roster period header (e.g. "1/Jul/2026 to 10/Jul/2026") contains the AUTHORITATIVE YEAR.
+ALWAYS use this year for EVERY entry's date field, regardless of what appears in individual day rows.
+Day rows only show "DD-Mon" (e.g. "08-Jul") without a year — NEVER infer or guess a different year.
+If the period header says 2026, every single entry date MUST use 2026 — not 2020, not any other year.
+Do NOT let visual artifacts, watermarks, page numbers, or unrelated numbers influence the year.
+The year comes ONLY from the period header. No exceptions.
+
 FIELD RULES:
 - scheduledBlock: value from the "Scheduled Route Block" column (H:MM block duration, e.g. "5:35")
 - flightTime: value from the "Flight Time" column (H:MM, the column immediately to the RIGHT of Scheduled Route Block). MUST be extracted — never leave null if the column has a value.
