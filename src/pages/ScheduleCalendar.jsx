@@ -71,6 +71,26 @@ function correctEntryYears(entries, crewPeriod) {
   });
 }
 
+// B737-SPT = Ground Instructor duty (teaching ground school), NOT actual flight time
+// Must be excluded from flight hours even though Merlot shows it as type FLIGHT with 8:00 duty
+function markGroundInstructorDuty(entries) {
+  return entries.map(e => {
+    const code = (e.dutyCode || '').toUpperCase();
+    const isGroundInstructor = code.includes('SPT') && code.includes('B737');
+    if (isGroundInstructor) {
+      return {
+        ...e,
+        type: 'GROUND_TRAINING',
+        blockMins: null,
+        flightTime: null,
+        scheduledBlock: e.scheduledBlock,
+        _isGroundInstructor: true,
+      };
+    }
+    return e;
+  });
+}
+
 // Find the calendar month that contains the most entries — most reliable way
 // to determine which month a Merlot roster belongs to, regardless of period dates.
 function dominantMonth(entries) {
@@ -329,6 +349,7 @@ export default function ScheduleCalendar({
 
     // Apply year safeguard before any further processing
     rawEntries = correctEntryYears(rawEntries, crew?.period);
+    rawEntries = markGroundInstructorDuty(rawEntries);
 
     // Auto-populate actualBlockMins from flightTime for past months
     // (past month Merlot rosters have actual block in Flight Time column)
@@ -526,6 +547,9 @@ export default function ScheduleCalendar({
       // Apply year safeguard before any further processing
       if (merged.entries && merged.crew?.period) {
         merged.entries = correctEntryYears(merged.entries, merged.crew.period);
+      }
+      if (merged.entries) {
+        merged.entries = markGroundInstructorDuty(merged.entries);
       }
 
       // Determine target year/month.
