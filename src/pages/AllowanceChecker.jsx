@@ -20,6 +20,7 @@ function makeEmptyRow(date) {
   return {
     date,
     route: '',
+    hrRoute: '',
     domScheduled: '',
     interScheduled: '',
     domActual: '',
@@ -56,7 +57,17 @@ function rowEffective(row) {
   return { domSched, interSched, domEff, interEff, domDelta, interDelta };
 }
 
+function normalizeRouteForCompare(route) {
+  return (route || '').toUpperCase().replace(/[→\s]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function hasRouteConflict(row) {
+  if (!row.hrRoute) return false;
+  return normalizeRouteForCompare(row.hrRoute) !== normalizeRouteForCompare(row.route);
+}
+
 function rowDiscrepancy(row) {
+  if (hasRouteConflict(row)) return 'major';
   const { domDelta, interDelta } = rowEffective(row);
   const totalAbsDelta = Math.abs(domDelta) + Math.abs(interDelta);
   if (totalAbsDelta === 0) return null;
@@ -168,6 +179,14 @@ function AllowanceRow({ row, idx, onUpdate, rates }) {
           placeholder=""
           className="text-white placeholder-slate-600"
         />
+        {hasRouteConflict(row) && (
+          <div
+            className="text-xs text-amber-400/80 px-1 truncate"
+            title="Route from HR sheet differs from Calendar — likely a swap happened after roster sync"
+          >
+            ⚠ HR: {row.hrRoute}
+          </div>
+        )}
       </td>
 
       {/* DOM scheduled */}
@@ -527,8 +546,22 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         reader.readAsDataURL(file);
       });
       const { analyzeHrSheet } = await import('../lib/anthropic.js');
-      const hrRows = await analyzeHrSheet(base64, file.type);
+      const { period, rows: hrRows } = await analyzeHrSheet(base64, file.type);
       if (!hrRows || hrRows.length === 0) throw new Error('No data found in HR sheet.');
+
+      // Period mismatch guard
+      const currentPeriod = `${year}-${String(month).padStart(2, '0')}`;
+      if (period && period !== currentPeriod) {
+        const ok = window.confirm(
+          `This HR sheet is for ${period}, but you have ${currentPeriod} open.\n\n` +
+          `Proceeding will overwrite ${currentPeriod}'s scheduled columns matched only by day number — ` +
+          `this is almost certainly wrong.\n\nContinue anyway?`
+        );
+        if (!ok) {
+          setHrError(`HR sheet period ${period} does not match open month ${currentPeriod}. Upload cancelled.`);
+          return;
+        }
+      }
 
       // Map HR rows into allowance rows by date
       setRows(prev => {
@@ -537,8 +570,9 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           if (!hrRow) return row;
           return {
             ...row,
-            domScheduled:   hrRow.domMins   > 0 ? String(hrRow.domMins)   : row.domScheduled,
-            interScheduled: hrRow.interMins > 0 ? String(hrRow.interMins) : row.interScheduled,
+            hrRoute:        hrRow.route  || row.hrRoute,
+            domScheduled:   hrRow.domMins   != null ? String(hrRow.domMins)   : row.domScheduled,
+            interScheduled: hrRow.interMins != null ? String(hrRow.interMins) : row.interScheduled,
             legs:           hrRow.legs      > 0 ? String(hrRow.legs)      : row.legs,
             perDiem:        hrRow.perDiem        ? hrRow.perDiem           : row.perDiem,
             code:           hrRow.code           ? hrRow.code              : row.code,
@@ -549,7 +583,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         return newRows;
       });
       setIsDirty(false);
-      setSyncSummary(`HR sheet loaded — ${hrRows.length} rows imported. Check DOM HR / INT HR columns.`);
+      setSyncSummary(`HR sheet loaded — ${hrRows.length} rows imported${period ? ` (period: ${period})` : ''}. Check DOM HR / INT HR columns.`);
     } catch (err) {
       setHrError(err.message || 'Failed to analyze HR sheet.');
     } finally {
@@ -594,6 +628,8 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         discs.push({
           date: row.date,
           route: row.route || '—',
+          hrRoute: row.hrRoute || '',
+          routeConflict: hasRouteConflict(row),
           colType,
           scheduled,
           actual,
@@ -636,6 +672,23 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, rates]);
+
+  const hasHrData = useMemo(() =>
+    rows.some(r => r.domScheduled !== '' || r.interScheduled !== '' || r.hrRoute),
+  [rows]);
+
+  function clearHrData() {
+    if (!window.confirm(
+      'This will clear all HR-derived columns (DOM HR, INT HR, HR route) for the current month.\n\n' +
+      'Your actual block times (DOM Act, INT Act from Calendar sync) will NOT be affected.\n\nContinue?'
+    )) return;
+    setRows(prev => {
+      const cleared = prev.map(row => ({ ...row, domScheduled: '', interScheduled: '', hrRoute: '' }));
+      saveAllowance(year, month, { rows: cleared });
+      return cleared;
+    });
+    setSyncSummary('HR data cleared.');
+  }
 
   // ─── render ───────────────────────────────────────────────────────────────
 
@@ -700,6 +753,15 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
             className="hidden"
             onChange={e => handleHrSheetUpload(e.target.files)}
           />
+          {hasHrData && (
+            <button
+              onClick={clearHrData}
+              className="text-sm px-3 py-1.5 rounded bg-slate-700 hover:bg-slate-600 text-red-300 transition-colors"
+              title="Clear all HR-derived data (DOM HR, INT HR, HR route) for this month"
+            >
+              Clear HR
+            </button>
+          )}
 
           {/* Toggle rates */}
           <button
@@ -825,6 +887,11 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
                 <span className={d.deltaThb > 0 ? 'text-emerald-400' : 'text-red-400'}>
                   ({d.deltaThb > 0 ? '+' : ''}{fmtThb(d.deltaThb)})
                 </span>
+                {d.routeConflict && (
+                  <div className="w-full text-amber-400/80 mt-0.5 pl-8">
+                    Route mismatch: roster {d.route} ≠ HR final {d.hrRoute}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -861,9 +928,11 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
           <div className="flex gap-2">
             <button
               onClick={() => {
-                const lines = discrepancies.map(d =>
-                  `Day ${d.date}: ${d.route.padEnd(12)} ${d.colType.padEnd(6)} ${d.scheduled} → ${d.actual} (${d.deltaThb > 0 ? '+' : ''}${fmtThb(d.deltaThb)})`
-                );
+                const lines = discrepancies.map(d => {
+                  let line = `Day ${d.date}: ${d.route.padEnd(12)} ${d.colType.padEnd(6)} ${d.scheduled} → ${d.actual} (${d.deltaThb > 0 ? '+' : ''}${fmtThb(d.deltaThb)})`;
+                  if (d.routeConflict) line += ` [route changed — HR final: ${d.hrRoute}]`;
+                  return line;
+                });
                 const total = discrepancies.reduce((s, d) => s + d.deltaThb, 0);
                 lines.push(`Total impact: ${total > 0 ? '+' : ''}${fmtThb(total)} THB`);
                 navigator.clipboard?.writeText(lines.join('\n'));

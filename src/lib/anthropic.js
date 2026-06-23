@@ -211,12 +211,15 @@ export async function analyzeHrSheet(fileBase64, mediaType) {
   // Strip any markdown fences the model might add despite instructions
   const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   const parsed = JSON.parse(clean);
-  return Array.isArray(parsed) ? parsed : (parsed.rows || []);
+  if (Array.isArray(parsed)) return { period: null, rows: parsed };
+  return { period: parsed.period || null, rows: parsed.rows || [] };
 }
 
 const HR_SHEET_PROMPT = `You are analyzing a Thai VietJet Air HR monthly allowance sheet (People Department email).
 
-The table has these columns left to right:
+STEP 1 — Read the header. Find the "Month :" field (e.g. "May-26", "Jun-26", "Jul-26"). Convert it to YYYY-MM format: "May-26" → "2026-05", "Jun-26" → "2026-06". This becomes the "period" field.
+
+STEP 2 — Read the table. Columns left to right:
 DATE | ROUTE/DUTY | BLOCK DOM | BLOCK INTER | SEC | DUTY | SIM | TRANSPORT | PERDIEM DOM | PERDIEM INTER | CODE(1-7)
 
 RULES:
@@ -227,10 +230,11 @@ RULES:
 - sim: 1 if the SIM column has any mark or value; 0 otherwise.
 - legs: SEC column value as integer (e.g. 1.0 → 1); 0 if blank.
 - code: CODE 1-7 column as string (e.g. "1", "DH-Sec1"); "" if blank.
-- domMins / interMins: 0 if the column is blank or shows a dash.
+- domMins / interMins: 0 if the column is blank or shows a dash. Use null if the cell is truly unreadable — never guess or copy from the example.
 
-Return ONLY a valid JSON array — no markdown, no explanation, no code fences. One object per calendar date row.
-Schema: [{"date":1,"route":"BKK-ICN","domMins":0,"interMins":325,"legs":1,"perDiem":"INTER","code":"","sim":0}]`;
+Return ONLY a valid JSON object (not array) — no markdown, no explanation, no code fences.
+Schema: {"period":"2026-05","rows":[{"date":17,"route":"CNX-HKT","domMins":140,"interMins":0,"legs":2,"perDiem":"DOM","code":"","sim":0}]}
+The example above is structure-only — never copy its values into real output. For cells you cannot read, use null.`;
 
 // ─── Roster prompt ────────────────────────────────────────────────────────────
 const ROSTER_EXTRACTION_PROMPT = `You are analyzing a Thai VietJet Air (TVJ) Merlot Employee Roster Report image.
