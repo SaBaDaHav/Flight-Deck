@@ -45,6 +45,48 @@ function computeRestMin(prevEntry, currEntry) {
   }
 }
 
+function explainViolation(e) {
+  const reasons = [];
+
+  if (e._ftlAnalysis?.fdpStatus === 'violation') {
+    const used = e._ftlAnalysis.fdpUsedMin;
+    const limit = e._ftlAnalysis.fdpLimitMin;
+    if (used != null && limit != null) {
+      const usedH = Math.floor(used/60), usedM = used%60;
+      const limitH = Math.floor(limit/60), limitM = limit%60;
+      reasons.push(
+        `FDP ${usedH}:${String(usedM).padStart(2,'0')} exceeds ${limitH}:${String(limitM).padStart(2,'0')} limit (OMA Table 7.1.2)`
+      );
+    } else {
+      reasons.push('FDP exceeds basic limit (OMA Table 7.1.2)');
+    }
+  }
+
+  if (e._restViolation) {
+    const rest = e._restBeforeMin;
+    const min = e._minRestRequired;
+    if (rest != null && min != null) {
+      const restH = Math.floor(rest/60), restM = rest%60;
+      const minH = Math.floor(min/60), minM = min%60;
+      reasons.push(
+        `Rest before ${restH}:${String(restM).padStart(2,'0')} is below ${minH}:${String(minM).padStart(2,'0')} minimum (ORO.FTL.235)`
+      );
+    } else {
+      reasons.push('Minimum rest not met (ORO.FTL.235)');
+    }
+  }
+
+  if (e.type === 'RERRP2LD' && e._restBeforeMin != null && e._restBeforeMin < 2880) {
+    const restH = Math.floor(e._restBeforeMin/60), restM = e._restBeforeMin%60;
+    reasons.push(
+      `RERRP2LD requires 2 full local days (≥48:00) — only ${restH}:${String(restM).padStart(2,'0')} achieved (OMA §7.1.x)`
+    );
+  }
+
+  if (reasons.length === 0) return 'New FTL violation introduced by this swap';
+  return reasons.join(' · ');
+}
+
 function enrichEntries(entries) {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const active = sorted.filter(e => e.type === 'FLIGHT' || e.type === 'STANDBY');
@@ -766,8 +808,9 @@ export default function RosterAnalyser() {
                       </span>
                     </div>
                     {newViolationEntries.map(e => (
-                      <div key={e.date} className="text-red-300">
-                        ⛔ {e.date} {e.dutyCode} — new violation after swap
+                      <div key={e.date} className="text-red-300 space-y-0.5">
+                        <div>⛔ {e.date} {e.dutyCode} — new violation after swap</div>
+                        <div className="text-red-300/70 pl-5">{explainViolation(e)}</div>
                       </div>
                     ))}
                   </div>
