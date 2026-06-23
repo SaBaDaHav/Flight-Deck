@@ -46,6 +46,8 @@ Full brief: CLAUDE.md in project root (gitignored)
 31. Swap Checker entry type detection fixed — REST/RERRP2LD/RERRP36/STANDBY entries from friend's screenshot were hardcoded as type:'FLIGHT', causing false FDP violations on rest days. Now correctly classified via detectSwapEntryType()
 32. Swap Checker violation explanations — shows specific FTL rule violated (FDP exceeded with OMA Table 7.1.2, rest shortfall with ORO.FTL.235) instead of generic "new violation" message
 33. detectMySwapFlights rewritten — now finds ALL BKK-rooted flight chains within the swap date range (not just the first chain), fixing missed give-away flights like single-day round trips (e.g. TFU-1) that aren't directly connected to an earlier chain
+34. B737-SPT confirmed as 8h ground duty (counts toward duty hour cumulative limits, never toward flight hours) — no max-consecutive-duty-days limit found in OMA or ftl-rules.js; rely on existing rolling duty limits (60h/7d, 110h/14d, 190h/28d) for swap/schedule safety checks instead
+35. Confirmed via live swap check: Jul 2026 swap (give away PKX1-1/PKX1-2/TFU-1, take REST-1/ICN1-1/ICN1-2/BCNX_PL2-1/BCNX_PL2-2/RERRP2LD×2) is FTL legal — 0 violations, 2 warnings unchanged, net +16,730 THB
 
 ---
 
@@ -57,6 +59,7 @@ Full brief: CLAUDE.md in project root (gitignored)
 4. AI occasionally still misreads year on first parse attempt — code-level safeguard now corrects it automatically, but always spot-check the displayed month/year after any upload
 5. iOS import — use iCloud.com to upload JSON, then Files app → iCloud Drive on iPhone (Google Drive direct picker doesn't work in Safari file input)
 6. NAS migration pending (Phase 2)
+7. No max-consecutive-duty-days rule exists in the app (none found in TVJ OMA either) — only rolling hour limits (7/14/28 day duty, 28 day flight) are checked. If a hard consecutive-day limit is later confirmed from OMA/OMC, add it as a new constant in ftl-rules.js rather than guessing a number.
 
 ---
 
