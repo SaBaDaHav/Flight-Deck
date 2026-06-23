@@ -307,6 +307,7 @@ export default function RosterAnalyser() {
         reader.onerror = rej;
         reader.readAsDataURL(file);
       });
+      console.log('[SwapChecker] Passing year to AI:', year);
       const flights = await analyzeSwapFlight(base64, year);
       setSwapFlights(flights);
     } catch (err) {

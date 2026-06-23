@@ -385,6 +385,7 @@ RULES:
 - dutyCode: everything before the colon on line 1
 - route: everything after the colon on line 1, normalized with dashes (e.g. "BKK-TPE-KIX")
 - date: start date as {{YEAR}}-MM-DD
+CRITICAL: The year value {{YEAR}} given above is authoritative and final — it has already been confirmed by the user. Do NOT infer, guess, calculate, or override this year based on anything visible in the screenshot (day-of-week patterns, other dates, app version numbers, timestamps, or any other visual cue). Every single date field in your output MUST use exactly the year {{YEAR}}, with only the month and day read from the image. If you find yourself wanting to use a different year, that impulse is wrong — always defer to {{YEAR}}.
 - dow: 3-letter abbreviation (Mon/Tue/Wed/Thu/Fri/Sat/Sun)
 - report: HH:MM — first time on line 2 (this is the report/check-in time)
 - release: HH:MM — last time on line 2 (this is the release time)
