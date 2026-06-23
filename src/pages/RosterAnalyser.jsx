@@ -374,6 +374,7 @@ export default function RosterAnalyser() {
     if (!theirFlights.length) return [];
     const HOME = 'BKK';
     const firstDate = theirFlights[0].date;
+    const lastDate  = theirFlights[theirFlights.length - 1].date;
     const firstMonth = parseInt(firstDate.slice(5, 7), 10);
     const firstYear  = parseInt(firstDate.slice(0, 4), 10);
 
@@ -390,30 +391,42 @@ export default function RosterAnalyser() {
       .filter(e => e.type === 'FLIGHT')
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Find my flight on or after their first date that departs BKK
-    const startFlight = sorted.find(e =>
+    function buildChain(startFlight, usedDates) {
+      const chain = [];
+      let current = startFlight;
+      while (current) {
+        chain.push(current);
+        usedDates.add(current.date);
+        const lastDest = current.sectors?.length > 0
+          ? current.sectors[current.sectors.length - 1].dest
+          : current.to;
+        if (lastDest === HOME) break;
+        const next = sorted.find(e =>
+          e.date > current.date &&
+          !usedDates.has(e.date) &&
+          (e.from === lastDest || e.sectors?.[0]?.origin === lastDest)
+        );
+        if (!next) break;
+        current = next;
+      }
+      return chain;
+    }
+
+    const usedDates = new Set();
+    const allChains = [];
+    const candidateStarts = sorted.filter(e =>
       e.date >= firstDate &&
+      e.date <= lastDate &&
       (e.from === HOME || e.sectors?.[0]?.origin === HOME)
     );
-    if (!startFlight) return [];
 
-    // Follow chain forward until we land back at BKK
-    const mySwap = [];
-    let current = startFlight;
-    while (current) {
-      mySwap.push(current);
-      const lastDest = current.sectors?.length > 0
-        ? current.sectors[current.sectors.length - 1].dest
-        : current.to;
-      if (lastDest === HOME) break;
-      const next = sorted.find(e =>
-        e.date > current.date &&
-        (e.from === lastDest || e.sectors?.[0]?.origin === lastDest)
-      );
-      if (!next) break;
-      current = next;
+    for (const start of candidateStarts) {
+      if (usedDates.has(start.date)) continue;
+      const chain = buildChain(start, usedDates);
+      if (chain.length > 0) allChains.push(...chain);
     }
-    return mySwap;
+
+    return allChains;
   }
 
   // Build modified roster with swap applied, re-run FTL analysis
