@@ -335,9 +335,9 @@ export default function RosterAnalyser() {
 
   const annualBlock = useMemo(() => loadAllMonthsBlock(year), [year]);
 
-  function calcFlightPay(route, numLegs) {
+  function calcFlightPay(route, numLegs, date = null) {
     const learnedRoutes = loadLearnedRoutes();
-    const blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes) || 0;
+    const blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes, date) || 0;
     const inter = isInternational(route);
     const sectorPay = numLegs * 840;
     const blockPay = inter
@@ -453,7 +453,7 @@ export default function RosterAnalyser() {
       const sectors = isFlight ? parts.slice(0, -1).map((o, i) => ({
         origin: o, dest: parts[i + 1], flight: '', depTime: '', arrTime: '',
       })) : [];
-      const blockMins = isFlight ? calcTotalBlockMinsWithLearned(f.route, learnedRoutes) : 0;
+      const blockMins = isFlight ? calcTotalBlockMinsWithLearned(f.route, learnedRoutes, f.date) : 0;
       return {
         date: f.date,
         dow: f.dow,
@@ -785,13 +785,13 @@ export default function RosterAnalyser() {
             const fmtThb = n => Math.round(n).toLocaleString('th-TH');
 
             const theirTotalPay = swapFlights.reduce((sum, f) => {
-              return sum + calcFlightPay(f.route, f.numLegs || 1).total;
+              return sum + calcFlightPay(f.route, f.numLegs || 1, f.date).total;
             }, 0);
             const myTotalPay = mySwapFlights.reduce((sum, e) => {
               const route = e.sectors?.length > 0
                 ? [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-')
                 : `${e.from}-${e.to}`;
-              return sum + calcFlightPay(route, e.numLegs || 1).total;
+              return sum + calcFlightPay(route, e.numLegs || 1, e.date).total;
             }, 0);
             const payDelta = theirTotalPay - myTotalPay;
 
@@ -850,7 +850,7 @@ export default function RosterAnalyser() {
                           const r = e.sectors?.length > 0
                             ? [e.sectors[0].origin, ...e.sectors.map(s => s.dest)].join('-')
                             : `${e.from}-${e.to}`;
-                          const p = calcFlightPay(r, e.numLegs || 1);
+                          const p = calcFlightPay(r, e.numLegs || 1, e.date);
                           return (
                             <div key={e.date} className="flex justify-between text-slate-400">
                               <span>{e.date} {e.dutyCode} {r} ({p.blockMins}min {p.inter?'INTER':'DOM'})</span>
@@ -866,7 +866,7 @@ export default function RosterAnalyser() {
                     )}
                     <p className="text-slate-500 font-sans mt-1">You take:</p>
                     {swapFlights.map((f, i) => {
-                      const p = calcFlightPay(f.route, f.numLegs || 1);
+                      const p = calcFlightPay(f.route, f.numLegs || 1, f.date);
                       return (
                         <div key={i} className="flex justify-between text-slate-200">
                           <span>{f.date} {f.dutyCode} {f.route} ({p.blockMins}min {p.inter?'INTER':'DOM'})</span>

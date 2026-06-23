@@ -478,7 +478,7 @@ export default function AllowanceChecker({ calEntries = [], calYear, calMonth })
         }
 
         // Route DB is most reliable; fall back to stored entry data
-        const dbMins    = calcTotalBlockMinsWithLearned(classRoute, learnedRoutes);
+        const dbMins    = calcTotalBlockMinsWithLearned(classRoute, learnedRoutes, entry.date);
         const totalMins = dbMins != null
           ? dbMins
           : (entry.blockMins != null

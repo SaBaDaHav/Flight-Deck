@@ -69,12 +69,12 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     if (type !== 'FLIGHT' || route.length < 7) return null;
     try {
       const learned = loadLearnedRoutes();
-      const mins = calcTotalBlockMinsWithLearned(route, learned);
+      const mins = calcTotalBlockMinsWithLearned(route, learned, date);
       return mins ? minsToHhmm(mins) : null;
     } catch {
       return null;
     }
-  }, [type, route]);
+  }, [type, route, date]);
 
   function parseTimeToMins(str) {
     if (!str) return null;
@@ -143,7 +143,7 @@ export default function EditEntryModal({ entry, date, onSave, onDelete, onClose,
     if (type === 'FLIGHT' && routeUpper) {
       try {
         const learned = loadLearnedRoutes();
-        const dbMins = calcTotalBlockMinsWithLearned(routeUpper, learned);
+        const dbMins = calcTotalBlockMinsWithLearned(routeUpper, learned, date);
         if (dbMins) {
           blockMins      = dbMins;
           flightTime     = minsToHhmm(dbMins);

@@ -171,7 +171,7 @@ function postProcessMobileEntries(rawEntries, selectedYear, learnedRoutes = {}) 
     let flightTime = null;
     let blockMins  = null;
     if (type === 'FLIGHT') {
-      const dbMins = calcTotalBlockMinsWithLearned(route, learnedRoutes);
+      const dbMins = calcTotalBlockMinsWithLearned(route, learnedRoutes, date);
       if (dbMins != null) {
         blockMins  = dbMins;
         flightTime = minsToHhmm(dbMins);
@@ -316,7 +316,7 @@ export default function ScheduleCalendar({
         } else if (e.from && e.to) {
           route = `${e.from}-${e.to}`;
         }
-        const mins = route ? calcTotalBlockMinsWithLearned(route, learnedRoutes) : null;
+        const mins = route ? calcTotalBlockMinsWithLearned(route, learnedRoutes, e.date) : null;
         return mins != null ? { ...e, blockMins: mins } : e;
       });
       setEntries(enrichEntries(backfilled));
@@ -585,7 +585,7 @@ export default function ScheduleCalendar({
           } else if (e.from && e.to) {
             route = `${e.from}-${e.to}`;
           }
-          if (route) blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes);
+          if (route) blockMins = calcTotalBlockMinsWithLearned(route, learnedRoutes, e.date);
         }
         // Auto-correct releaseNextDay if release < report (catches AI parsing misses)
         const autoReleaseNextDay = e.releaseNextDay || (() => {
@@ -857,7 +857,7 @@ export default function ScheduleCalendar({
         : e.from && e.to ? `${e.from}-${e.to}` : ''));
       const entryBlock = e.blockMins != null
         ? e.blockMins
-        : calcTotalBlockMinsWithLearned(route, loadLearnedRoutes())
+        : calcTotalBlockMinsWithLearned(route, loadLearnedRoutes(), e.date)
         || parseHhmm(e.flightTime)
         || 0;
       flightMins += entryBlock;
