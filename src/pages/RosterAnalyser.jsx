@@ -87,6 +87,16 @@ function explainViolation(e) {
   return reasons.join(' · ');
 }
 
+function detectSwapEntryType(dutyCode) {
+  const code = (dutyCode || '').toUpperCase();
+  if (code.startsWith('RERRP2LD')) return 'RERRP2LD';
+  if (code.startsWith('RERRP36')) return 'RERRP36';
+  if (code.startsWith('REST')) return 'OFF';
+  if (code === 'OFF' || code.startsWith('OFF-')) return 'OFF';
+  if (code.includes('STANDBY') || code.startsWith('SBA') || code.startsWith('SBD') || code.startsWith('SBM')) return 'STANDBY';
+  return 'FLIGHT';
+}
+
 function enrichEntries(entries) {
   const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
   const active = sorted.filter(e => e.type === 'FLIGHT' || e.type === 'STANDBY');
@@ -424,26 +434,28 @@ export default function RosterAnalyser() {
     // Convert their flights to roster entry schema
     const learnedRoutes = loadLearnedRoutes();
     const theirEntries = theirFlights.map(f => {
-      const parts = (f.route || '').split('-').filter(Boolean);
-      const sectors = parts.slice(0, -1).map((o, i) => ({
+      const entryType = detectSwapEntryType(f.dutyCode);
+      const isFlight = entryType === 'FLIGHT';
+      const parts = isFlight ? (f.route || '').split('-').filter(Boolean) : [];
+      const sectors = isFlight ? parts.slice(0, -1).map((o, i) => ({
         origin: o, dest: parts[i + 1], flight: '', depTime: '', arrTime: '',
-      }));
-      const blockMins = calcTotalBlockMinsWithLearned(f.route, learnedRoutes);
+      })) : [];
+      const blockMins = isFlight ? calcTotalBlockMinsWithLearned(f.route, learnedRoutes) : 0;
       return {
         date: f.date,
         dow: f.dow,
-        type: 'FLIGHT',
+        type: entryType,
         dutyCode: f.dutyCode,
-        from: parts[0] || null,
-        to: parts[parts.length - 1] || null,
+        from: isFlight ? (parts[0] || null) : null,
+        to: isFlight ? (parts[parts.length - 1] || null) : null,
         report: f.report,
         release: f.release,
         releaseNextDay: f.releaseNextDay || false,
-        flightTime: blockMins ? `${Math.floor(blockMins/60)}:${String(blockMins%60).padStart(2,'0')}` : null,
+        flightTime: isFlight && blockMins ? `${Math.floor(blockMins/60)}:${String(blockMins%60).padStart(2,'0')}` : null,
         dutyTime: null,
         tafb: null,
         sectors,
-        numLegs: f.numLegs || Math.max(0, parts.length - 1),
+        numLegs: isFlight ? (f.numLegs || Math.max(0, parts.length - 1)) : 0,
         layover: f.releaseNextDay || false,
         blockMins,
         nightDuty: false, earlyStart: false, lateFinish: false,
